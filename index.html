@@ -532,19 +532,25 @@
   }
 
   /* EXPENSES TABLE - simpler than cotação */
-  /* Layout: Qtd | Nome (cresce) | Valor unit. | Subtotal | × */
-  /* Tabela NÃO ocupa 100% — pra Valor/Subtotal ficarem agrupados perto do nome */
-  .expenses-table {
-    width: auto;
-    min-width: 100%;
+  /* Tabela ocupa 100% do card; o card é que tem largura máxima */
+  .expenses-table.expenses-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: auto;
+  }
+  /* Card que envolve tabelas simples (Bichos / Pessoais / Gastos) — largura limitada */
+  .table-wrap.simple-wrap {
+    max-width: 700px;
   }
   .expenses-table th.col-qty,
-  .expenses-table td.col-qty { width: 70px; }
-  .expenses-table th.col-desc { width: 280px; min-width: 200px; }
-  .expenses-table th.col-value { width: 130px; }
-  .expenses-table th.col-subtotal { width: 130px; }
+  .expenses-table td.col-qty { width: 70px; min-width: 70px; }
+  .expenses-table th.col-desc { width: auto; min-width: 180px; }
+  .expenses-table th.col-value,
+  .expenses-table td.col-value { width: 120px; min-width: 120px; }
+  .expenses-table th.col-subtotal,
+  .expenses-table td.col-subtotal { width: 120px; min-width: 120px; }
   .expenses-table th.col-actions,
-  .expenses-table td.col-actions { width: 50px; }
+  .expenses-table td.col-actions { width: 50px; min-width: 50px; }
 
   /* MOBILE */
   @media (max-width: 700px) {
@@ -566,11 +572,12 @@
     /* No celular esconde a coluna Subtotal pra liberar espaço — já tem total no topo */
     .expenses-table th.col-subtotal,
     .expenses-table td.col-subtotal { display: none; }
-    .expenses-table { min-width: 100%; }
+    .table-wrap.simple-wrap { max-width: 100%; }
     .expenses-table th.col-qty,
-    .expenses-table td.col-qty { width: 56px; }
-    .expenses-table th.col-desc { width: auto; min-width: 110px; }
-    .expenses-table th.col-value { width: 100px; }
+    .expenses-table td.col-qty { width: 56px; min-width: 56px; }
+    .expenses-table th.col-desc { min-width: 110px; }
+    .expenses-table th.col-value,
+    .expenses-table td.col-value { width: 100px; min-width: 100px; }
   }
 
   /* SYNC STATUS */
@@ -1854,7 +1861,7 @@ function App() {
             <button className="btn primary" onClick={addBicho}>＋ Novo bicho</button>
           </div>
 
-          <div className="table-wrap">
+          <div className="table-wrap simple-wrap">
             <div className="table-scroll">
               <table className="expenses-table">
                 <thead>
@@ -1879,7 +1886,7 @@ function App() {
                             onChange={e => updateBicho(b.id, { qty: parseInt(e.target.value)||1 })}
                           />
                         </td>
-                        <td>
+                        <td className="col-desc">
                           <input
                             className="cell-input"
                             value={b.name}
@@ -1887,7 +1894,7 @@ function App() {
                             placeholder="Nome do bicho"
                           />
                         </td>
-                        <td>
+                        <td className="col-value">
                           <input
                             className="cell-input price"
                             value={b.value == null ? "" : b.value.toString().replace(".", ",")}
@@ -1925,7 +1932,7 @@ function App() {
             </div>
           </div>
 
-          <div className="table-wrap" style={{padding: '20px'}}>
+          <div className="table-wrap simple-wrap" style={{padding: '20px'}}>
             <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
               <label style={{fontSize: 13, color: 'var(--ink-soft)', letterSpacing: '0.05em', textTransform: 'uppercase'}}>
                 Valor da oferenda
@@ -1969,7 +1976,7 @@ function App() {
             <button className="btn primary" onClick={addPessoal}>＋ Novo item pessoal</button>
           </div>
 
-          <div className="table-wrap">
+          <div className="table-wrap simple-wrap">
             <div className="table-scroll">
               <table className="expenses-table">
                 <thead>
@@ -1994,7 +2001,7 @@ function App() {
                             onChange={e => updatePessoal(p.id, { qty: parseInt(e.target.value)||1 })}
                           />
                         </td>
-                        <td>
+                        <td className="col-desc">
                           <input
                             className="cell-input"
                             value={p.name}
@@ -2002,7 +2009,7 @@ function App() {
                             placeholder="Ex: Roupa branca, sandália, toalha..."
                           />
                         </td>
-                        <td>
+                        <td className="col-value">
                           <input
                             className="cell-input price"
                             value={p.value == null ? "" : p.value.toString().replace(".", ",")}
@@ -2058,7 +2065,7 @@ function App() {
           </div>
 
           {/* EXPENSES TABLE */}
-          <div className="table-wrap">
+          <div className="table-wrap simple-wrap">
             <div className="table-scroll">
               <table className="expenses-table">
                 <thead>
@@ -2071,7 +2078,7 @@ function App() {
                 <tbody>
                   {expenses.map(e => (
                     <tr key={e.id}>
-                      <td>
+                      <td className="col-desc">
                         <input
                           className="cell-input"
                           value={e.description}
@@ -2079,7 +2086,7 @@ function App() {
                           placeholder="Ex: Mercado, transporte, taxa..."
                         />
                       </td>
-                      <td>
+                      <td className="col-value">
                         <input
                           className="cell-input price"
                           value={e.value == null ? "" : e.value.toString().replace(".", ",")}
