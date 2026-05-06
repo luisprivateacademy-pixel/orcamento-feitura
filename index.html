@@ -532,8 +532,10 @@
   }
 
   /* EXPENSES TABLE - simpler than cotação */
-  .expenses-table th.col-desc { width: auto; }
-  .expenses-table th.col-value { width: 160px; }
+  .expenses-table { min-width: 460px; }
+  .expenses-table th.col-desc { width: auto; min-width: 140px; }
+  .expenses-table th.col-value { width: 110px; }
+  .expenses-table th.col-subtotal { width: 110px; }
 
   /* MOBILE */
   @media (max-width: 700px) {
@@ -551,6 +553,14 @@
       height: 80vh;
     }
     .sync-status { font-size: 10px; }
+
+    /* No celular esconde a coluna Subtotal pra liberar espaço — já tem total no topo */
+    .expenses-table th.col-subtotal,
+    .expenses-table td.col-subtotal { display: none; }
+    .expenses-table { min-width: 360px; }
+    .expenses-table th.col-value { width: 95px; }
+    thead th.col-qty { width: 56px; }
+    .expenses-table th.col-desc { min-width: 110px; }
   }
 
   /* SYNC STATUS */
@@ -982,6 +992,44 @@ const parseImportedJSON = (text) => {
   };
 };
 
+// ============== MIGRAÇÃO v1 → v2 ==============
+// Nomes que indicam que um item da cotação na verdade é bicho
+// (estado v1 antigo tinha bichos misturados na cotação)
+const BICHO_KEYWORDS = ["cabrito", "frango", "franga", "d'angola", "dangola", "pombo claro", "pombo branco", "pombos"];
+
+const isItemABicho = (name) => {
+  const n = norm(name);
+  // Cuidado: "pombo miniatura de chumbo" e "pilão miniatura de chumbo" NÃO são bichos
+  if (n.includes("miniatura") || n.includes("chumbo")) return false;
+  return BICHO_KEYWORDS.some(kw => n.includes(norm(kw)));
+};
+
+// Recebe o estado carregado e move bichos da cotação pra aba bichos se detectar
+// que o estado é antigo (v1 sem aba bichos própria).
+const migrateV1toV2 = (state) => {
+  const itemsAreBichos = state.items.filter(it => isItemABicho(it.name));
+  if (itemsAreBichos.length === 0) return state; // nada pra migrar
+
+  const itemsCleaned = state.items.filter(it => !isItemABicho(it.name));
+
+  // Bichos atuais — se aba bichos está vazia ou tem só os iniciais (sem valores), substitui;
+  // senão, mantém os atuais (usuário já mexeu) e só remove os duplicados da cotação.
+  const bichosVazios = !state.bichos || state.bichos.length === 0
+    || state.bichos.every(b => b.value == null);
+
+  let newBichos = state.bichos || [];
+  if (bichosVazios) {
+    // Converte os itens-bicho da cotação pra formato bicho (perde preços de loja, mas não tinha mesmo)
+    newBichos = itemsAreBichos.map(it => newSimpleItem(it.qty, it.name, null));
+  }
+
+  return {
+    ...state,
+    items: itemsCleaned,
+    bichos: newBichos,
+  };
+};
+
 // ============== APP ==============
 function App() {
   // Estado inicial vem do localStorage (instantâneo) — depois é sobrescrito pelo Supabase
@@ -1018,8 +1066,10 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        const remote = await fetchRemoteState();
+        const remoteRaw = await fetchRemoteState();
         if (cancelled) return;
+        // Aplica migração v1→v2 se estado vem do banco com bichos misturados
+        const remote = remoteRaw ? migrateV1toV2(remoteRaw) : null;
         if (remote && (remote.items.length > 0 || remote.expenses.length > 0
             || (remote.bichos && remote.bichos.length > 0)
             || (remote.pessoais && remote.pessoais.length > 0)
@@ -1802,7 +1852,7 @@ function App() {
                     <th className="col-qty">Qtd</th>
                     <th className="col-desc">Bicho</th>
                     <th className="col-value" style={{textAlign:'right'}}>Valor unit.</th>
-                    <th className="col-value" style={{textAlign:'right'}}>Subtotal</th>
+                    <th className="col-subtotal" style={{textAlign:'right'}}>Subtotal</th>
                     <th className="col-actions"></th>
                   </tr>
                 </thead>
@@ -1835,7 +1885,7 @@ function App() {
                             placeholder="—"
                           />
                         </td>
-                        <td className="cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
+                        <td className="col-subtotal cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
                           {b.value != null ? formatBRL(subtotal) : "—"}
                         </td>
                         <td>
@@ -1917,7 +1967,7 @@ function App() {
                     <th className="col-qty">Qtd</th>
                     <th className="col-desc">Item</th>
                     <th className="col-value" style={{textAlign:'right'}}>Valor unit.</th>
-                    <th className="col-value" style={{textAlign:'right'}}>Subtotal</th>
+                    <th className="col-subtotal" style={{textAlign:'right'}}>Subtotal</th>
                     <th className="col-actions"></th>
                   </tr>
                 </thead>
@@ -1950,7 +2000,7 @@ function App() {
                             placeholder="—"
                           />
                         </td>
-                        <td className="cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
+                        <td className="col-subtotal cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
                           {p.value != null ? formatBRL(subtotal) : "—"}
                         </td>
                         <td>
