@@ -130,6 +130,16 @@
   .btn.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
   .btn.danger { color: var(--red); }
   .btn.danger:hover { background: #fff; border-color: var(--red); }
+  .modal .btn.danger {
+    background: var(--red);
+    color: #fff;
+    border-color: var(--red);
+  }
+  .modal .btn.danger:hover {
+    background: #6a2a1f;
+    border-color: #6a2a1f;
+    color: #fff;
+  }
 
   /* TABLE */
   .table-wrap {
@@ -837,6 +847,8 @@ function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [appPassword, setAppPassword] = useState(() => localStorage.getItem(APP_PASSWORD_STORAGE) || "");
   const [showKeyModal, setShowKeyModal] = useState(false);
+  // Modal de confirmação destrutiva (pede senha pra resetar/limpar)
+  const [destructiveAction, setDestructiveAction] = useState(null); // { title, message, onConfirm }
 
   // Sincronização: status visível pro usuário
   // "loading" | "synced" | "saving" | "offline"
@@ -1000,7 +1012,11 @@ function App() {
   const deleteExpense = (id) => setExpenses(prev => prev.filter(e => e.id !== id));
   const addExpense = () => setExpenses(prev => [...prev, newExpense("", null)]);
   const clearExpenses = () => {
-    if (confirm("Apagar todos os gastos avulsos?")) setExpenses([]);
+    setDestructiveAction({
+      title: "Limpar gastos avulsos",
+      message: "Vai apagar TODOS os gastos avulsos. Digite a senha do app pra confirmar.",
+      onConfirm: () => setExpenses([]),
+    });
   };
 
   // --- table ops ---
@@ -1021,15 +1037,23 @@ function App() {
     setStores(prev => prev.map((s,i) => i===idx ? name : s));
   };
   const resetAll = () => {
-    if (confirm("Apagar todas as cotações e voltar à lista original?")) {
-      setItems(INITIAL_ITEMS.map(it => newRow(it.qty, it.name)));
-      setStores(["Loja 1", "Loja 2", "Loja 3", "Loja 4"]);
-    }
+    setDestructiveAction({
+      title: "Resetar tudo",
+      message: "Vai apagar TODAS as cotações e voltar à lista original. Digite a senha do app pra confirmar.",
+      onConfirm: () => {
+        setItems(INITIAL_ITEMS.map(it => newRow(it.qty, it.name)));
+        setStores(["Loja 1", "Loja 2", "Loja 3", "Loja 4"]);
+      },
+    });
   };
   const clearPrices = () => {
-    if (confirm("Apagar apenas os preços (manter a lista de itens)?")) {
-      setItems(prev => prev.map(it => ({ ...it, prices: [null,null,null,null] })));
-    }
+    setDestructiveAction({
+      title: "Limpar preços",
+      message: "Vai apagar TODOS os preços (mantém a lista de itens). Digite a senha do app pra confirmar.",
+      onConfirm: () => {
+        setItems(prev => prev.map(it => ({ ...it, prices: [null,null,null,null] })));
+      },
+    });
   };
 
   // --- AI actions: applied to state ---
@@ -1413,6 +1437,23 @@ function App() {
           onCancel={() => setShowKeyModal(false)}
         />
       )}
+
+      {destructiveAction && (
+        <DestructiveConfirmModal
+          title={destructiveAction.title}
+          message={destructiveAction.message}
+          appPassword={appPassword}
+          onNeedPassword={() => {
+            setDestructiveAction(null);
+            setShowKeyModal(true);
+          }}
+          onConfirm={() => {
+            destructiveAction.onConfirm();
+            setDestructiveAction(null);
+          }}
+          onCancel={() => setDestructiveAction(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1439,6 +1480,57 @@ function PasswordModal({ currentPassword, onSave, onCancel }) {
         <div className="modal-buttons">
           <button className="btn" onClick={onCancel}>Cancelar</button>
           <button className="btn primary" onClick={() => onSave(val.trim())}>Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== DESTRUCTIVE CONFIRM MODAL (com senha) ==============
+function DestructiveConfirmModal({ title, message, appPassword, onNeedPassword, onConfirm, onCancel }) {
+  const [val, setVal] = useState("");
+  const [error, setError] = useState("");
+
+  // Se ainda não tem senha configurada, abre o modal de senha em vez deste
+  useEffect(() => {
+    if (!appPassword) {
+      onNeedPassword();
+    }
+  }, [appPassword]);
+
+  if (!appPassword) return null;
+
+  const tryConfirm = () => {
+    if (val.trim() === appPassword) {
+      onConfirm();
+    } else {
+      setError("Senha incorreta");
+      setVal("");
+    }
+  };
+
+  return (
+    <div className="modal-bg" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2 style={{color: 'var(--red)'}}>⚠️ {title}</h2>
+        <p>{message}</p>
+        <input
+          type="password"
+          placeholder="senha do app"
+          value={val}
+          onChange={e => { setVal(e.target.value); setError(""); }}
+          autoFocus
+          onKeyDown={e => { if (e.key === "Enter") tryConfirm(); }}
+          style={error ? { borderColor: 'var(--red)' } : {}}
+        />
+        {error && (
+          <p style={{color: 'var(--red)', fontSize: 12, marginTop: -8, marginBottom: 12}}>
+            {error}
+          </p>
+        )}
+        <div className="modal-buttons">
+          <button className="btn" onClick={onCancel}>Cancelar</button>
+          <button className="btn danger" onClick={tryConfirm}>Confirmar</button>
         </div>
       </div>
     </div>
