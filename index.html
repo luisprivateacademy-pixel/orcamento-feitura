@@ -532,10 +532,19 @@
   }
 
   /* EXPENSES TABLE - simpler than cotação */
-  .expenses-table { min-width: 460px; }
-  .expenses-table th.col-desc { width: auto; min-width: 140px; }
-  .expenses-table th.col-value { width: 110px; }
-  .expenses-table th.col-subtotal { width: 110px; }
+  /* Layout: Qtd | Nome (cresce) | Valor unit. | Subtotal | × */
+  /* Tabela NÃO ocupa 100% — pra Valor/Subtotal ficarem agrupados perto do nome */
+  .expenses-table {
+    width: auto;
+    min-width: 100%;
+  }
+  .expenses-table th.col-qty,
+  .expenses-table td.col-qty { width: 70px; }
+  .expenses-table th.col-desc { width: 280px; min-width: 200px; }
+  .expenses-table th.col-value { width: 130px; }
+  .expenses-table th.col-subtotal { width: 130px; }
+  .expenses-table th.col-actions,
+  .expenses-table td.col-actions { width: 50px; }
 
   /* MOBILE */
   @media (max-width: 700px) {
@@ -557,10 +566,11 @@
     /* No celular esconde a coluna Subtotal pra liberar espaço — já tem total no topo */
     .expenses-table th.col-subtotal,
     .expenses-table td.col-subtotal { display: none; }
-    .expenses-table { min-width: 360px; }
-    .expenses-table th.col-value { width: 95px; }
-    thead th.col-qty { width: 56px; }
-    .expenses-table th.col-desc { min-width: 110px; }
+    .expenses-table { min-width: 100%; }
+    .expenses-table th.col-qty,
+    .expenses-table td.col-qty { width: 56px; }
+    .expenses-table th.col-desc { width: auto; min-width: 110px; }
+    .expenses-table th.col-value { width: 100px; }
   }
 
   /* SYNC STATUS */
@@ -1861,7 +1871,7 @@ function App() {
                     const subtotal = (b.value || 0) * (b.qty || 1);
                     return (
                       <tr key={b.id}>
-                        <td>
+                        <td className="col-qty">
                           <input
                             className="cell-input qty"
                             type="number" min="1"
@@ -1888,7 +1898,7 @@ function App() {
                         <td className="col-subtotal cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
                           {b.value != null ? formatBRL(subtotal) : "—"}
                         </td>
-                        <td>
+                        <td className="col-actions">
                           <button className="row-action-btn" onClick={() => deleteBicho(b.id)} title="Remover">×</button>
                         </td>
                       </tr>
@@ -1976,7 +1986,7 @@ function App() {
                     const subtotal = (p.value || 0) * (p.qty || 1);
                     return (
                       <tr key={p.id}>
-                        <td>
+                        <td className="col-qty">
                           <input
                             className="cell-input qty"
                             type="number" min="1"
@@ -2003,7 +2013,7 @@ function App() {
                         <td className="col-subtotal cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
                           {p.value != null ? formatBRL(subtotal) : "—"}
                         </td>
-                        <td>
+                        <td className="col-actions">
                           <button className="row-action-btn" onClick={() => deletePessoal(p.id)} title="Remover">×</button>
                         </td>
                       </tr>
@@ -2077,7 +2087,7 @@ function App() {
                           placeholder="—"
                         />
                       </td>
-                      <td>
+                      <td className="col-actions">
                         <button className="row-action-btn" onClick={() => deleteExpense(e.id)} title="Remover">×</button>
                       </td>
                     </tr>
