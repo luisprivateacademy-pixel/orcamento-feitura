@@ -1927,13 +1927,21 @@ REGRAS:
 
 function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expenses, activeTab, applyActions }) {
   const [messages, setMessages] = useState([
-    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nGastos avulsos:\n• \"Adiciona mercado 700 reais\"\n• \"Gastei 50 de uber\"\n• \"Taxa de 150\"\n\nOu envie a foto de uma lista." },
+    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nGastos avulsos:\n• \"Adiciona mercado 700 reais\"\n• \"Gastei 50 de uber\"\n• \"Taxa de 150\"\n\n📷 Envie a foto de uma lista\n🎤 Ou aperte o microfone e fale" },
   ]);
   const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef();
   const scrollRef = useRef();
+
+  // ===== Gravação de áudio =====
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordTimerRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -1952,6 +1960,132 @@ function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expens
     };
     reader.readAsDataURL(file);
     e.target.value = "";
+  };
+
+  // ===== Gravação =====
+  const startRecording = async () => {
+    if (!ensurePassword()) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("Seu navegador não suporta gravação de áudio.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Escolhe formato suportado pelo navegador
+      const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/ogg;codecs=opus",
+      ];
+      let mimeType = "";
+      for (const c of candidates) {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) {
+          mimeType = c; break;
+        }
+      }
+      const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+      audioChunksRef.current = [];
+
+      mr.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) audioChunksRef.current.push(ev.data);
+      };
+      mr.onstop = async () => {
+        // Para o stream do mic
+        try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        // Para o timer
+        if (recordTimerRef.current) {
+          clearInterval(recordTimerRef.current);
+          recordTimerRef.current = null;
+        }
+        setRecordSeconds(0);
+        setRecording(false);
+        // Junta os pedaços
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || "audio/webm" });
+        if (blob.size < 500) {
+          // áudio muito curto, ignora
+          return;
+        }
+        await transcribeAndFill(blob);
+      };
+
+      mr.start();
+      setRecording(true);
+      setRecordSeconds(0);
+      recordTimerRef.current = setInterval(() => {
+        setRecordSeconds(s => s + 1);
+      }, 1000);
+    } catch (e) {
+      console.error("Erro ao iniciar gravação:", e);
+      alert("Não foi possível acessar o microfone. Verifique se você deu permissão ao navegador.");
+    }
+  };
+
+  const stopRecording = () => {
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== "inactive") {
+      mr.stop();
+    }
+  };
+
+  const cancelRecording = () => {
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== "inactive") {
+      // Limpa chunks pra que onstop não envie nada
+      audioChunksRef.current = [];
+      mr.stop();
+    }
+  };
+
+  const transcribeAndFill = async (blob) => {
+    setTranscribing(true);
+    try {
+      // Converte blob → base64
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("Falha ao ler áudio"));
+        r.readAsDataURL(blob);
+      });
+
+      const resp = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-app-password": appPassword,
+        },
+        body: JSON.stringify({
+          audio: base64,
+          mimeType: blob.type || "audio/webm",
+          language: "pt",
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`Erro ${resp.status}: ${err.slice(0, 200)}`);
+      }
+
+      const data = await resp.json();
+      const text = (data.text || "").trim();
+      if (!text) {
+        alert("Não consegui entender o áudio. Tente falar mais claramente.");
+        return;
+      }
+      // Coloca no input — usuário ainda pode editar antes de enviar, ou só clicar em ↑
+      setInput(prev => prev ? `${prev} ${text}` : text);
+    } catch (e) {
+      alert("Erro na transcrição: " + e.message);
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
+  const formatRecordTime = (s) => {
+    const m = Math.floor(s / 60);
+    const ss = (s % 60).toString().padStart(2, "0");
+    return `${m}:${ss}`;
   };
 
   const buildContext = () => {
@@ -2100,24 +2234,51 @@ ${expensesList || "(nenhum)"}`;
           >×</button>
         </div>
       )}
+      {recording && (
+        <div className="image-preview" style={{background: '#fff3e8', borderTop: '1px solid var(--accent)'}}>
+          <span style={{
+            display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+            background: 'var(--red)', animation: 'pulse 1.2s infinite',
+          }}></span>
+          <span style={{flex: 1}}>Gravando... {formatRecordTime(recordSeconds)}</span>
+          <button
+            style={{background:'none', border:'none', cursor:'pointer', color:'var(--ink-soft)', fontSize: 18}}
+            onClick={cancelRecording}
+            title="Cancelar"
+          >×</button>
+        </div>
+      )}
+      {transcribing && (
+        <div className="image-preview" style={{background: '#fff8eb'}}>
+          <div className="typing"><span></span><span></span><span></span></div>
+          <span>Transcrevendo áudio...</span>
+        </div>
+      )}
       <div className="chat-input-area">
         <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} style={{display:'none'}} />
         <button
           className="chat-btn-icon secondary"
           onClick={() => fileRef.current?.click()}
           title="Enviar foto da lista"
-          disabled={loading}
+          disabled={loading || recording || transcribing}
         >📷</button>
+        <button
+          className={recording ? "chat-btn-icon" : "chat-btn-icon secondary"}
+          onClick={recording ? stopRecording : startRecording}
+          title={recording ? "Parar e enviar" : "Gravar áudio"}
+          disabled={loading || transcribing}
+          style={recording ? { background: 'var(--red)', borderColor: 'var(--red)' } : {}}
+        >{recording ? "■" : "🎤"}</button>
         <textarea
           className="chat-input"
-          placeholder="Ex: R$15 na vela branca, Loja Oxum"
+          placeholder={recording ? "Falando..." : "Ex: R$15 na vela branca, Loja Oxum"}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKey}
           rows={1}
-          disabled={loading}
+          disabled={loading || recording}
         />
-        <button className="chat-btn-icon" onClick={send} disabled={loading} title="Enviar">↑</button>
+        <button className="chat-btn-icon" onClick={send} disabled={loading || recording || transcribing} title="Enviar">↑</button>
       </div>
     </div>
   );
