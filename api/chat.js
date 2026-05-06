@@ -2,12 +2,14 @@
 // Keeps the API key on the server, requires a password from the client.
 
 export default async function handler(req, res) {
+  // CORS - same origin in prod, but doesn't hurt
   res.setHeader("Content-Type", "application/json");
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
   }
 
+  // Auth: simple password check
   const expectedPassword = process.env.APP_PASSWORD;
   const sentPassword = req.headers["x-app-password"];
   if (!expectedPassword) {
@@ -23,6 +25,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Vercel Node runtime: body may already be parsed
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
 
     const { system, messages, max_tokens, model } = body || {};
@@ -38,7 +41,7 @@ export default async function handler(req, res) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: model || "claude-haiku-4-5-20251001",
+        model: model || "claude-haiku-4-5",
         max_tokens: max_tokens || 2000,
         system,
         messages,
@@ -53,6 +56,7 @@ export default async function handler(req, res) {
   }
 }
 
+// Vercel: increase body size limit for image uploads (base64 photos can be ~3-5MB)
 export const config = {
   api: {
     bodyParser: {
