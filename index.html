@@ -730,6 +730,13 @@ const parsePrice = (s) => {
   return isNaN(n) ? null : n;
 };
 
+// Formata número pra exibição em campo editável (sem R$, com vírgula)
+const formatPriceForInput = (n) => {
+  if (n == null || isNaN(n)) return "";
+  // Mantém até 2 casas decimais, com vírgula
+  return n.toFixed(2).replace(".", ",").replace(/,00$/, "");
+};
+
 // fuzzy find item by name (case insensitive, accent insensitive, partial)
 const norm = (s) => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
 const findItemIndex = (items, query) => {
@@ -1047,6 +1054,45 @@ const migrateV1toV2 = (state) => {
   };
 };
 
+// ============== PRICE INPUT (aceita digitação livre, converte só no blur) ==============
+function PriceInput({ value, onCommit, className = "cell-input price", placeholder = "—", style }) {
+  // Texto exibido enquanto edita — começa formatado, mas livre durante digitação
+  const [text, setText] = React.useState(formatPriceForInput(value));
+  const editingRef = React.useRef(false);
+
+  // Quando o valor de fora muda (e não estamos editando), atualiza o texto exibido
+  React.useEffect(() => {
+    if (!editingRef.current) setText(formatPriceForInput(value));
+  }, [value]);
+
+  const handleFocus = () => {
+    editingRef.current = true;
+  };
+
+  const handleBlur = () => {
+    editingRef.current = false;
+    const parsed = parsePrice(text);
+    // Re-formata o que o user digitou (limpa cifrão, espaços etc)
+    setText(formatPriceForInput(parsed));
+    onCommit(parsed);
+  };
+
+  return (
+    <input
+      className={className}
+      type="text"
+      inputMode="decimal"
+      value={text}
+      placeholder={placeholder}
+      style={style}
+      onFocus={handleFocus}
+      onChange={e => setText(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+    />
+  );
+}
+
 // ============== APP ==============
 function App() {
   // Estado inicial vem do localStorage (instantâneo) — depois é sobrescrito pelo Supabase
@@ -1264,10 +1310,8 @@ function App() {
   const updateExpense = (id, patch) => {
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
   };
-  const updateExpenseValue = (id, raw) => {
-    setExpenses(prev => prev.map(e => e.id === id
-      ? { ...e, value: raw === "" ? null : parsePrice(raw) }
-      : e));
+  const updateExpenseValue = (id, parsed) => {
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, value: parsed } : e));
   };
   const deleteExpense = (id) => {
     const exp = expenses.find(e => e.id === id);
@@ -1291,11 +1335,11 @@ function App() {
   const updateItem = (id, patch) => {
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
   };
-  const updatePrice = (id, storeIdx, raw) => {
+  const updatePrice = (id, storeIdx, parsed) => {
     setItems(prev => prev.map(it => {
       if (it.id !== id) return it;
       const prices = [...it.prices];
-      prices[storeIdx] = raw === "" ? null : parsePrice(raw);
+      prices[storeIdx] = parsed;
       return { ...it, prices };
     }));
   };
@@ -1317,10 +1361,8 @@ function App() {
   const updateBicho = (id, patch) => {
     setBichos(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   };
-  const updateBichoValue = (id, raw) => {
-    setBichos(prev => prev.map(b => b.id === id
-      ? { ...b, value: raw === "" ? null : parsePrice(raw) }
-      : b));
+  const updateBichoValue = (id, parsed) => {
+    setBichos(prev => prev.map(b => b.id === id ? { ...b, value: parsed } : b));
   };
   const deleteBicho = (id) => {
     const b = bichos.find(x => x.id === id);
@@ -1337,10 +1379,8 @@ function App() {
   const updatePessoal = (id, patch) => {
     setPessoais(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
   };
-  const updatePessoalValue = (id, raw) => {
-    setPessoais(prev => prev.map(p => p.id === id
-      ? { ...p, value: raw === "" ? null : parsePrice(raw) }
-      : p));
+  const updatePessoalValue = (id, parsed) => {
+    setPessoais(prev => prev.map(p => p.id === id ? { ...p, value: parsed } : p));
   };
   const deletePessoal = (id) => {
     const p = pessoais.find(x => x.id === id);
@@ -1354,8 +1394,8 @@ function App() {
   const addPessoal = () => setPessoais(prev => [...prev, newSimpleItem(1, "", null)]);
 
   // ===== OFERENDA ops =====
-  const updateOferendaValue = (raw) => {
-    setOferendaValue(raw === "" ? null : parsePrice(raw));
+  const updateOferendaValue = (parsed) => {
+    setOferendaValue(parsed);
   };
   const resetAll = () => {
     setDestructiveAction({
@@ -1818,11 +1858,9 @@ function App() {
                         </td>
                         {row.prices.map((p, i) => (
                           <td key={i} className={`price-cell ${i === lowIdx ? "lowest" : ""}`}>
-                            <input
-                              className="cell-input price"
-                              value={p == null ? "" : p.toString().replace(".", ",")}
-                              onChange={e => updatePrice(row.id, i, e.target.value)}
-                              placeholder="—"
+                            <PriceInput
+                              value={p}
+                              onCommit={(n) => updatePrice(row.id, i, n)}
                             />
                           </td>
                         ))}
@@ -1895,11 +1933,9 @@ function App() {
                           />
                         </td>
                         <td className="col-value">
-                          <input
-                            className="cell-input price"
-                            value={b.value == null ? "" : b.value.toString().replace(".", ",")}
-                            onChange={e => updateBichoValue(b.id, e.target.value)}
-                            placeholder="—"
+                          <PriceInput
+                            value={b.value}
+                            onCommit={(n) => updateBichoValue(b.id, n)}
                           />
                         </td>
                         <td className="col-subtotal cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
@@ -1937,8 +1973,11 @@ function App() {
               <label style={{fontSize: 13, color: 'var(--ink-soft)', letterSpacing: '0.05em', textTransform: 'uppercase'}}>
                 Valor da oferenda
               </label>
-              <input
+              <PriceInput
+                value={oferendaValue}
+                onCommit={(n) => updateOferendaValue(n)}
                 className="cell-input price"
+                placeholder="0,00"
                 style={{
                   fontSize: 20,
                   padding: '10px 12px',
@@ -1947,9 +1986,6 @@ function App() {
                   background: '#fff',
                   textAlign: 'right',
                 }}
-                value={oferendaValue == null ? "" : oferendaValue.toString().replace(".", ",")}
-                onChange={e => updateOferendaValue(e.target.value)}
-                placeholder="0,00"
               />
               <p style={{margin: 0, fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.5}}>
                 Esse valor entra no Total Geral. Combine com o pai de santo o que está incluído.
@@ -2010,11 +2046,9 @@ function App() {
                           />
                         </td>
                         <td className="col-value">
-                          <input
-                            className="cell-input price"
-                            value={p.value == null ? "" : p.value.toString().replace(".", ",")}
-                            onChange={e => updatePessoalValue(p.id, e.target.value)}
-                            placeholder="—"
+                          <PriceInput
+                            value={p.value}
+                            onCommit={(n) => updatePessoalValue(p.id, n)}
                           />
                         </td>
                         <td className="col-subtotal cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
@@ -2087,11 +2121,9 @@ function App() {
                         />
                       </td>
                       <td className="col-value">
-                        <input
-                          className="cell-input price"
-                          value={e.value == null ? "" : e.value.toString().replace(".", ",")}
-                          onChange={ev => updateExpenseValue(e.id, ev.target.value)}
-                          placeholder="—"
+                        <PriceInput
+                          value={e.value}
+                          onCommit={(n) => updateExpenseValue(e.id, n)}
                         />
                       </td>
                       <td className="col-actions">
