@@ -656,6 +656,9 @@ const INITIAL_ITEMS = [
   { qty: 1, name: "Pacote de velas de 7 dias com 10" },
   { qty: 5, name: "Pacotes de velas finas" },
   { qty: 2, name: "Decisas" },
+];
+
+const INITIAL_BICHOS = [
   { qty: 1, name: "Cabrito branco" },
   { qty: 7, name: "Frangos" },
   { qty: 3, name: "Frangas" },
@@ -664,7 +667,8 @@ const INITIAL_ITEMS = [
   { qty: 1, name: "Pombo branco" },
 ];
 
-const STORAGE_KEY = "candomble_orcamento_v1";
+// v2: separa bichos da cotação, adiciona oferenda, abas pessoais e oferenda
+const STORAGE_KEY = "candomble_orcamento_v2";
 const APP_PASSWORD_STORAGE = "app_password";
 
 // ============== HELPERS ==============
@@ -677,6 +681,12 @@ const newRow = (qty=1, name="", prices=[null,null,null,null]) => ({
 const newExpense = (description="", value=null) => ({
   id: crypto.randomUUID(),
   description, value,
+});
+
+// Item simples para Bichos / Pessoais (nome + qtd + valor único)
+const newSimpleItem = (qty=1, name="", value=null) => ({
+  id: crypto.randomUUID(),
+  qty, name, value,
 });
 
 const formatBRL = (n) => {
@@ -737,6 +747,9 @@ const loadStateLocal = () => {
           items: parsed.items,
           stores: parsed.stores,
           expenses: parsed.expenses || [],
+          bichos: Array.isArray(parsed.bichos) ? parsed.bichos : INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
+          pessoais: Array.isArray(parsed.pessoais) ? parsed.pessoais : [],
+          oferendaValue: typeof parsed.oferendaValue === "number" ? parsed.oferendaValue : null,
         };
       }
     }
@@ -745,6 +758,9 @@ const loadStateLocal = () => {
     items: INITIAL_ITEMS.map(it => newRow(it.qty, it.name)),
     stores: ["Loja 1", "Loja 2", "Loja 3", "Loja 4"],
     expenses: [],
+    bichos: INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
+    pessoais: [],
+    oferendaValue: null,
   };
 };
 
@@ -817,6 +833,9 @@ const fetchRemoteState = async () => {
       ? d.stores
       : ["Loja 1", "Loja 2", "Loja 3", "Loja 4"],
     expenses: Array.isArray(d.expenses) ? d.expenses : [],
+    bichos: Array.isArray(d.bichos) ? d.bichos : INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
+    pessoais: Array.isArray(d.pessoais) ? d.pessoais : [],
+    oferendaValue: typeof d.oferendaValue === "number" ? d.oferendaValue : null,
     updated_at: data.updated_at,
   };
 };
@@ -828,6 +847,9 @@ const saveRemoteState = async (state) => {
     items: state.items,
     stores: state.stores,
     expenses: state.expenses,
+    bichos: state.bichos,
+    pessoais: state.pessoais,
+    oferendaValue: state.oferendaValue,
     _client_id: CLIENT_ID, // marcador pra ignorar na escuta Realtime
   };
   const { error } = await sb
@@ -847,6 +869,9 @@ const createBackup = async (state, label = null) => {
     items: state.items,
     stores: state.stores,
     expenses: state.expenses,
+    bichos: state.bichos,
+    pessoais: state.pessoais,
+    oferendaValue: state.oferendaValue,
   };
   const { data, error } = await sb
     .from(BACKUPS_TABLE)
@@ -917,11 +942,14 @@ const formatBackupDate = (iso) => {
 // ============== EXPORT / IMPORT JSON ==============
 const downloadJSON = (state) => {
   const payload = {
-    version: 1,
+    version: 2,
     exported_at: new Date().toISOString(),
     items: state.items,
     stores: state.stores,
     expenses: state.expenses,
+    bichos: state.bichos,
+    pessoais: state.pessoais,
+    oferendaValue: state.oferendaValue,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -947,6 +975,10 @@ const parseImportedJSON = (text) => {
       ? src.stores
       : ["Loja 1", "Loja 2", "Loja 3", "Loja 4"],
     expenses: Array.isArray(src.expenses) ? src.expenses : [],
+    // v2: bichos/pessoais/oferenda — se vier de v1 (sem esses campos), usa defaults
+    bichos: Array.isArray(src.bichos) ? src.bichos : INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
+    pessoais: Array.isArray(src.pessoais) ? src.pessoais : [],
+    oferendaValue: typeof src.oferendaValue === "number" ? src.oferendaValue : null,
   };
 };
 
@@ -957,12 +989,17 @@ function App() {
   const [items, setItems] = useState(initial.items);
   const [stores, setStores] = useState(initial.stores);
   const [expenses, setExpenses] = useState(initial.expenses || []);
-  const [activeTab, setActiveTab] = useState("cotacao"); // "cotacao" | "gastos"
+  const [bichos, setBichos] = useState(initial.bichos || []);
+  const [pessoais, setPessoais] = useState(initial.pessoais || []);
+  const [oferendaValue, setOferendaValue] = useState(initial.oferendaValue ?? null);
+  const [activeTab, setActiveTab] = useState("cotacao"); // "cotacao" | "bichos" | "oferenda" | "pessoais" | "gastos"
   const [chatOpen, setChatOpen] = useState(false);
   const [appPassword, setAppPassword] = useState(() => localStorage.getItem(APP_PASSWORD_STORAGE) || "");
   const [showKeyModal, setShowKeyModal] = useState(false);
   // Modal de confirmação destrutiva (pede senha pra resetar/limpar)
   const [destructiveAction, setDestructiveAction] = useState(null); // { title, message, onConfirm }
+  // Modal de confirmação simples (sem senha — pra excluir 1 item)
+  const [simpleConfirm, setSimpleConfirm] = useState(null); // { title, message, onConfirm }
   // Modal de backups
   const [backupsOpen, setBackupsOpen] = useState(false);
   const importFileRef = useRef();
@@ -984,23 +1021,33 @@ function App() {
         const remote = await fetchRemoteState();
         if (cancelled) return;
         if (remote && (remote.items.length > 0 || remote.expenses.length > 0
+            || (remote.bichos && remote.bichos.length > 0)
+            || (remote.pessoais && remote.pessoais.length > 0)
+            || remote.oferendaValue != null
             || JSON.stringify(remote.stores) !== JSON.stringify(["Loja 1","Loja 2","Loja 3","Loja 4"]))) {
           // Banco tem dados → usa eles
           isApplyingRemoteRef.current = true;
           setItems(remote.items);
           setStores(remote.stores);
           setExpenses(remote.expenses);
+          if (Array.isArray(remote.bichos)) setBichos(remote.bichos);
+          if (Array.isArray(remote.pessoais)) setPessoais(remote.pessoais);
+          setOferendaValue(remote.oferendaValue ?? null);
           setTimeout(() => { isApplyingRemoteRef.current = false; }, 50);
         } else {
           // Banco vazio → primeira vez. Se tem dados locais, sobe pro banco.
           // Se não tem dados locais, sobe a lista inicial padrão.
           const local = loadStateLocal();
-          const hasLocalData = local.items.length > 0 || local.expenses.length > 0;
+          const hasLocalData = local.items.length > 0 || local.expenses.length > 0
+                             || (local.bichos && local.bichos.length > 0)
+                             || (local.pessoais && local.pessoais.length > 0);
           if (!hasLocalData) {
             // Aplica lista inicial padrão (com IDs novos)
             const defaultItems = INITIAL_ITEMS.map(it => newRow(it.qty, it.name));
+            const defaultBichos = INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name));
             isApplyingRemoteRef.current = true;
             setItems(defaultItems);
+            setBichos(defaultBichos);
             setTimeout(() => { isApplyingRemoteRef.current = false; }, 50);
           }
           // Salva o que tiver no banco (será disparado pelo autosave abaixo)
@@ -1023,8 +1070,8 @@ function App() {
     // Espera 5s depois do load pra não congestionar a inicialização
     const timer = setTimeout(() => {
       // Só faz backup se tiver dados de verdade
-      if (items.length === 0 && expenses.length === 0) return;
-      ensureDailyBackup({ items, stores, expenses }).catch(() => {});
+      if (items.length === 0 && expenses.length === 0 && bichos.length === 0 && pessoais.length === 0) return;
+      ensureDailyBackup({ items, stores, expenses, bichos, pessoais, oferendaValue }).catch(() => {});
     }, 5000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1053,6 +1100,9 @@ function App() {
               if (Array.isArray(newData.items)) setItems(newData.items);
               if (Array.isArray(newData.stores) && newData.stores.length === 4) setStores(newData.stores);
               if (Array.isArray(newData.expenses)) setExpenses(newData.expenses);
+              if (Array.isArray(newData.bichos)) setBichos(newData.bichos);
+              if (Array.isArray(newData.pessoais)) setPessoais(newData.pessoais);
+              if (newData.oferendaValue !== undefined) setOferendaValue(newData.oferendaValue);
               setTimeout(() => { isApplyingRemoteRef.current = false; }, 50);
               // Pequeno flash visual de "sincronizado"
               setSyncStatus("synced");
@@ -1074,7 +1124,7 @@ function App() {
   // ====== AUTOSAVE COM DEBOUNCE ======
   useEffect(() => {
     // Sempre salva no localStorage (cache instantâneo)
-    saveStateLocal({ items, stores, expenses });
+    saveStateLocal({ items, stores, expenses, bichos, pessoais, oferendaValue });
 
     // Não salva no banco se ainda não fez o primeiro carregamento
     if (!initialLoadDoneRef.current) return;
@@ -1085,7 +1135,7 @@ function App() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await saveRemoteState({ items, stores, expenses });
+        await saveRemoteState({ items, stores, expenses, bichos, pessoais, oferendaValue });
         setSyncStatus("synced");
       } catch (e) {
         console.error("Erro ao salvar:", e);
@@ -1096,7 +1146,7 @@ function App() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [items, stores, expenses]);
+  }, [items, stores, expenses, bichos, pessoais, oferendaValue]);
 
   // --- summary calc ---
   const summary = useMemo(() => {
@@ -1129,7 +1179,19 @@ function App() {
     return expenses.reduce((sum, e) => sum + (e.value || 0), 0);
   }, [expenses]);
 
-  const grandTotal = summary.totalLowest + expensesTotal;
+  // Total dos bichos: valor unitário * quantidade
+  const bichosTotal = useMemo(() => {
+    return bichos.reduce((sum, b) => sum + ((b.value || 0) * (b.qty || 1)), 0);
+  }, [bichos]);
+
+  // Total das compras pessoais: valor unitário * quantidade
+  const pessoaisTotal = useMemo(() => {
+    return pessoais.reduce((sum, p) => sum + ((p.value || 0) * (p.qty || 1)), 0);
+  }, [pessoais]);
+
+  const oferendaTotal = oferendaValue || 0;
+
+  const grandTotal = summary.totalLowest + expensesTotal + bichosTotal + pessoaisTotal + oferendaTotal;
 
   // --- expenses ops ---
   const updateExpense = (id, patch) => {
@@ -1140,7 +1202,15 @@ function App() {
       ? { ...e, value: raw === "" ? null : parsePrice(raw) }
       : e));
   };
-  const deleteExpense = (id) => setExpenses(prev => prev.filter(e => e.id !== id));
+  const deleteExpense = (id) => {
+    const exp = expenses.find(e => e.id === id);
+    if (!exp) return;
+    setSimpleConfirm({
+      title: "Excluir gasto?",
+      message: `Tem certeza que quer excluir "${exp.description || "(sem descrição)"}"? Essa ação não pode ser desfeita.`,
+      onConfirm: () => setExpenses(prev => prev.filter(e => e.id !== id)),
+    });
+  };
   const addExpense = () => setExpenses(prev => [...prev, newExpense("", null)]);
   const clearExpenses = () => {
     setDestructiveAction({
@@ -1162,18 +1232,75 @@ function App() {
       return { ...it, prices };
     }));
   };
-  const deleteRow = (id) => setItems(prev => prev.filter(it => it.id !== id));
+  const deleteRow = (id) => {
+    const it = items.find(i => i.id === id);
+    if (!it) return;
+    setSimpleConfirm({
+      title: "Excluir item?",
+      message: `Tem certeza que quer excluir "${it.name || "(sem nome)"}" da cotação? Essa ação não pode ser desfeita.`,
+      onConfirm: () => setItems(prev => prev.filter(i => i.id !== id)),
+    });
+  };
   const addRow = () => setItems(prev => [...prev, newRow(1, "")]);
   const renameStore = (idx, name) => {
     setStores(prev => prev.map((s,i) => i===idx ? name : s));
   };
+
+  // ===== BICHOS ops =====
+  const updateBicho = (id, patch) => {
+    setBichos(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+  };
+  const updateBichoValue = (id, raw) => {
+    setBichos(prev => prev.map(b => b.id === id
+      ? { ...b, value: raw === "" ? null : parsePrice(raw) }
+      : b));
+  };
+  const deleteBicho = (id) => {
+    const b = bichos.find(x => x.id === id);
+    if (!b) return;
+    setSimpleConfirm({
+      title: "Excluir bicho?",
+      message: `Tem certeza que quer excluir "${b.name || "(sem nome)"}" da lista de bichos? Essa ação não pode ser desfeita.`,
+      onConfirm: () => setBichos(prev => prev.filter(x => x.id !== id)),
+    });
+  };
+  const addBicho = () => setBichos(prev => [...prev, newSimpleItem(1, "", null)]);
+
+  // ===== PESSOAIS ops =====
+  const updatePessoal = (id, patch) => {
+    setPessoais(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+  };
+  const updatePessoalValue = (id, raw) => {
+    setPessoais(prev => prev.map(p => p.id === id
+      ? { ...p, value: raw === "" ? null : parsePrice(raw) }
+      : p));
+  };
+  const deletePessoal = (id) => {
+    const p = pessoais.find(x => x.id === id);
+    if (!p) return;
+    setSimpleConfirm({
+      title: "Excluir item pessoal?",
+      message: `Tem certeza que quer excluir "${p.name || "(sem nome)"}" da lista pessoal? Essa ação não pode ser desfeita.`,
+      onConfirm: () => setPessoais(prev => prev.filter(x => x.id !== id)),
+    });
+  };
+  const addPessoal = () => setPessoais(prev => [...prev, newSimpleItem(1, "", null)]);
+
+  // ===== OFERENDA ops =====
+  const updateOferendaValue = (raw) => {
+    setOferendaValue(raw === "" ? null : parsePrice(raw));
+  };
   const resetAll = () => {
     setDestructiveAction({
       title: "Resetar tudo",
-      message: "Vai apagar TODAS as cotações e voltar à lista original. Digite a senha do app pra confirmar.",
+      message: "Vai apagar TUDO (cotação, bichos, pessoais, oferenda, gastos) e voltar à lista original. Digite a senha do app pra confirmar.",
       onConfirm: () => {
         setItems(INITIAL_ITEMS.map(it => newRow(it.qty, it.name)));
         setStores(["Loja 1", "Loja 2", "Loja 3", "Loja 4"]);
+        setBichos(INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)));
+        setPessoais([]);
+        setOferendaValue(null);
+        setExpenses([]);
       },
     });
   };
@@ -1189,7 +1316,7 @@ function App() {
 
   // --- backup / restore / export / import ---
   const handleExport = () => {
-    downloadJSON({ items, stores, expenses });
+    downloadJSON({ items, stores, expenses, bichos, pessoais, oferendaValue });
   };
 
   const handleImportClick = () => {
@@ -1206,13 +1333,16 @@ function App() {
         const parsed = parseImportedJSON(ev.target.result);
         setDestructiveAction({
           title: "Importar arquivo",
-          message: `Vai SUBSTITUIR os dados atuais pelo conteúdo do arquivo (${parsed.items.length} itens, ${parsed.expenses.length} gastos). Digite a senha pra confirmar.`,
+          message: `Vai SUBSTITUIR os dados atuais pelo conteúdo do arquivo (${parsed.items.length} itens, ${parsed.bichos.length} bichos, ${parsed.pessoais.length} pessoais, ${parsed.expenses.length} gastos). Digite a senha pra confirmar.`,
           onConfirm: () => {
             // Cria backup antes de substituir
-            createBackup({ items, stores, expenses }, "Antes de importar arquivo").catch(() => {});
+            createBackup({ items, stores, expenses, bichos, pessoais, oferendaValue }, "Antes de importar arquivo").catch(() => {});
             setItems(parsed.items);
             setStores(parsed.stores);
             setExpenses(parsed.expenses);
+            setBichos(parsed.bichos);
+            setPessoais(parsed.pessoais);
+            setOferendaValue(parsed.oferendaValue);
           },
         });
       } catch (err) {
@@ -1228,24 +1358,30 @@ function App() {
       message: `Vai SUBSTITUIR os dados atuais pelo backup de ${formatBackupDate(backup.created_at)}. Digite a senha pra confirmar.`,
       onConfirm: () => {
         // Antes de restaurar, salva o estado atual como backup
-        createBackup({ items, stores, expenses }, "Antes de restaurar").catch(() => {});
+        createBackup({ items, stores, expenses, bichos, pessoais, oferendaValue }, "Antes de restaurar").catch(() => {});
         const d = backup.data || {};
         if (Array.isArray(d.items)) setItems(d.items);
         if (Array.isArray(d.stores) && d.stores.length === 4) setStores(d.stores);
         if (Array.isArray(d.expenses)) setExpenses(d.expenses);
+        // v2: bichos/pessoais/oferenda — se backup é v1, mantém o que tá agora pra não zerar
+        if (Array.isArray(d.bichos)) setBichos(d.bichos);
+        if (Array.isArray(d.pessoais)) setPessoais(d.pessoais);
+        if (d.oferendaValue !== undefined) setOferendaValue(d.oferendaValue);
         setBackupsOpen(false);
       },
     });
   };
 
   // --- AI actions: applied to state ---
-  // actions = [{type: "set_price", item, store, price}, {type:"add_item", name, qty, price?, store?}, {type:"remove_item", item}, {type:"rename_item", item, new_name}, {type:"set_qty", item, qty}, {type:"rename_store", store, new_name}]
   const applyActions = (actions) => {
     if (!actions || !actions.length) return [];
     const applied = [];
     let curItems = items.map(i => ({...i, prices:[...i.prices]}));
     let curStores = [...stores];
     let curExpenses = expenses.map(e => ({...e}));
+    let curBichos = bichos.map(b => ({...b}));
+    let curPessoais = pessoais.map(p => ({...p}));
+    let curOferenda = oferendaValue;
 
     for (const a of actions) {
       try {
@@ -1355,6 +1491,92 @@ function App() {
             applied.push(`✗ Gasto não encontrado ou valor inválido: "${a.description}"`);
           }
         }
+        // ===== BICHOS =====
+        else if (a.type === "add_bicho") {
+          const exists = findItemIndex(curBichos, a.name);
+          if (exists >= 0) {
+            applied.push(`• Bicho já existe: "${a.name}"`);
+          } else {
+            const value = a.value != null ? parsePrice(a.value) : null;
+            curBichos = [...curBichos, newSimpleItem(a.qty || 1, a.name, value)];
+            applied.push(`+ Bicho adicionado: ${a.name}` + (value != null ? ` (${formatBRL(value)})` : ""));
+          }
+        }
+        else if (a.type === "remove_bicho") {
+          const idx = findItemIndex(curBichos, a.name || a.item);
+          if (idx >= 0) {
+            const removed = curBichos[idx].name;
+            curBichos = curBichos.filter((_, i) => i !== idx);
+            applied.push(`− Bicho removido: ${removed}`);
+          } else {
+            applied.push(`✗ Bicho não encontrado: "${a.name || a.item}"`);
+          }
+        }
+        else if (a.type === "set_bicho_value") {
+          const value = parsePrice(a.value);
+          const idx = findItemIndex(curBichos, a.name || a.item);
+          if (idx >= 0 && value != null) {
+            curBichos[idx] = { ...curBichos[idx], value };
+            applied.push(`✎ Bicho "${curBichos[idx].name}": ${formatBRL(value)}`);
+          } else {
+            applied.push(`✗ Bicho não encontrado ou valor inválido: "${a.name || a.item}"`);
+          }
+        }
+        else if (a.type === "set_bicho_qty") {
+          const idx = findItemIndex(curBichos, a.name || a.item);
+          if (idx >= 0) {
+            curBichos[idx] = { ...curBichos[idx], qty: parseInt(a.qty) || 1 };
+            applied.push(`✎ Qtd bicho "${curBichos[idx].name}": ${a.qty}`);
+          }
+        }
+        // ===== PESSOAIS =====
+        else if (a.type === "add_pessoal") {
+          const exists = findItemIndex(curPessoais, a.name);
+          if (exists >= 0) {
+            applied.push(`• Item pessoal já existe: "${a.name}"`);
+          } else {
+            const value = a.value != null ? parsePrice(a.value) : null;
+            curPessoais = [...curPessoais, newSimpleItem(a.qty || 1, a.name, value)];
+            applied.push(`+ Pessoal adicionado: ${a.name}` + (value != null ? ` (${formatBRL(value)})` : ""));
+          }
+        }
+        else if (a.type === "remove_pessoal") {
+          const idx = findItemIndex(curPessoais, a.name || a.item);
+          if (idx >= 0) {
+            const removed = curPessoais[idx].name;
+            curPessoais = curPessoais.filter((_, i) => i !== idx);
+            applied.push(`− Pessoal removido: ${removed}`);
+          } else {
+            applied.push(`✗ Item pessoal não encontrado: "${a.name || a.item}"`);
+          }
+        }
+        else if (a.type === "set_pessoal_value") {
+          const value = parsePrice(a.value);
+          const idx = findItemIndex(curPessoais, a.name || a.item);
+          if (idx >= 0 && value != null) {
+            curPessoais[idx] = { ...curPessoais[idx], value };
+            applied.push(`✎ Pessoal "${curPessoais[idx].name}": ${formatBRL(value)}`);
+          } else {
+            applied.push(`✗ Item pessoal não encontrado ou valor inválido: "${a.name || a.item}"`);
+          }
+        }
+        else if (a.type === "set_pessoal_qty") {
+          const idx = findItemIndex(curPessoais, a.name || a.item);
+          if (idx >= 0) {
+            curPessoais[idx] = { ...curPessoais[idx], qty: parseInt(a.qty) || 1 };
+            applied.push(`✎ Qtd pessoal "${curPessoais[idx].name}": ${a.qty}`);
+          }
+        }
+        // ===== OFERENDA =====
+        else if (a.type === "set_oferenda_value") {
+          const value = parsePrice(a.value);
+          if (value != null) {
+            curOferenda = value;
+            applied.push(`✎ Oferenda para os exus: ${formatBRL(value)}`);
+          } else {
+            applied.push(`✗ Valor inválido para oferenda`);
+          }
+        }
       } catch (e) {
         applied.push(`✗ Erro: ${e.message}`);
       }
@@ -1363,6 +1585,9 @@ function App() {
     setItems(curItems);
     setStores(curStores);
     setExpenses(curExpenses);
+    setBichos(curBichos);
+    setPessoais(curPessoais);
+    setOferendaValue(curOferenda);
     return applied;
   };
 
@@ -1394,7 +1619,7 @@ function App() {
         <div>
           <div className="label">Total Geral</div>
           <div className="breakdown">
-            Cotação {formatBRL(summary.totalLowest)} + Gastos {formatBRL(expensesTotal)}
+            Cotação {formatBRL(summary.totalLowest)} · Bichos {formatBRL(bichosTotal)} · Oferenda {formatBRL(oferendaTotal)} · Pessoais {formatBRL(pessoaisTotal)} · Gastos {formatBRL(expensesTotal)}
           </div>
         </div>
         <div className="value">{formatBRL(grandTotal)}</div>
@@ -1407,6 +1632,24 @@ function App() {
           onClick={() => setActiveTab("cotacao")}
         >
           Cotação <span className="count">{items.length}</span>
+        </button>
+        <button
+          className={`tab ${activeTab === "bichos" ? "active" : ""}`}
+          onClick={() => setActiveTab("bichos")}
+        >
+          Bichos <span className="count">{bichos.length}</span>
+        </button>
+        <button
+          className={`tab ${activeTab === "oferenda" ? "active" : ""}`}
+          onClick={() => setActiveTab("oferenda")}
+        >
+          Oferenda Exus
+        </button>
+        <button
+          className={`tab ${activeTab === "pessoais" ? "active" : ""}`}
+          onClick={() => setActiveTab("pessoais")}
+        >
+          Pessoais <span className="count">{pessoais.length}</span>
         </button>
         <button
           className={`tab ${activeTab === "gastos" ? "active" : ""}`}
@@ -1534,6 +1777,200 @@ function App() {
         </>
       )}
 
+      {activeTab === "bichos" && (
+        <>
+          <div className="summary" style={{gridTemplateColumns:'1fr 1fr'}}>
+            <div className="stat">
+              <div className="label">Total dos bichos</div>
+              <div className="value gold">{formatBRL(bichosTotal)}</div>
+            </div>
+            <div className="stat">
+              <div className="label">Tipos de bicho</div>
+              <div className="value">{bichos.length}</div>
+            </div>
+          </div>
+
+          <div className="toolbar">
+            <button className="btn primary" onClick={addBicho}>＋ Novo bicho</button>
+          </div>
+
+          <div className="table-wrap">
+            <div className="table-scroll">
+              <table className="expenses-table">
+                <thead>
+                  <tr>
+                    <th className="col-qty">Qtd</th>
+                    <th className="col-desc">Bicho</th>
+                    <th className="col-value" style={{textAlign:'right'}}>Valor unit.</th>
+                    <th className="col-value" style={{textAlign:'right'}}>Subtotal</th>
+                    <th className="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bichos.map(b => {
+                    const subtotal = (b.value || 0) * (b.qty || 1);
+                    return (
+                      <tr key={b.id}>
+                        <td>
+                          <input
+                            className="cell-input qty"
+                            type="number" min="1"
+                            value={b.qty}
+                            onChange={e => updateBicho(b.id, { qty: parseInt(e.target.value)||1 })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="cell-input"
+                            value={b.name}
+                            onChange={e => updateBicho(b.id, { name: e.target.value })}
+                            placeholder="Nome do bicho"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="cell-input price"
+                            value={b.value == null ? "" : b.value.toString().replace(".", ",")}
+                            onChange={e => updateBichoValue(b.id, e.target.value)}
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className="cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
+                          {b.value != null ? formatBRL(subtotal) : "—"}
+                        </td>
+                        <td>
+                          <button className="row-action-btn" onClick={() => deleteBicho(b.id)} title="Remover">×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {bichos.length === 0 && (
+                    <tr><td colSpan="5" style={{textAlign:'center', padding:'24px', color:'var(--ink-soft)', fontStyle:'italic'}}>
+                      Nenhum bicho. Clique em "Novo bicho".
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "oferenda" && (
+        <>
+          <div className="summary" style={{gridTemplateColumns:'1fr'}}>
+            <div className="stat">
+              <div className="label">Oferenda para os próprios exus (mais do pai de santo)</div>
+              <div className="value gold">{formatBRL(oferendaTotal)}</div>
+            </div>
+          </div>
+
+          <div className="table-wrap" style={{padding: '20px'}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+              <label style={{fontSize: 13, color: 'var(--ink-soft)', letterSpacing: '0.05em', textTransform: 'uppercase'}}>
+                Valor da oferenda
+              </label>
+              <input
+                className="cell-input price"
+                style={{
+                  fontSize: 20,
+                  padding: '10px 12px',
+                  border: '1px solid var(--line)',
+                  borderRadius: 6,
+                  background: '#fff',
+                  textAlign: 'right',
+                }}
+                value={oferendaValue == null ? "" : oferendaValue.toString().replace(".", ",")}
+                onChange={e => updateOferendaValue(e.target.value)}
+                placeholder="0,00"
+              />
+              <p style={{margin: 0, fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.5}}>
+                Esse valor entra no Total Geral. Combine com o pai de santo o que está incluído.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "pessoais" && (
+        <>
+          <div className="summary" style={{gridTemplateColumns:'1fr 1fr'}}>
+            <div className="stat">
+              <div className="label">Total compras pessoais</div>
+              <div className="value gold">{formatBRL(pessoaisTotal)}</div>
+            </div>
+            <div className="stat">
+              <div className="label">Itens pessoais</div>
+              <div className="value">{pessoais.length}</div>
+            </div>
+          </div>
+
+          <div className="toolbar">
+            <button className="btn primary" onClick={addPessoal}>＋ Novo item pessoal</button>
+          </div>
+
+          <div className="table-wrap">
+            <div className="table-scroll">
+              <table className="expenses-table">
+                <thead>
+                  <tr>
+                    <th className="col-qty">Qtd</th>
+                    <th className="col-desc">Item</th>
+                    <th className="col-value" style={{textAlign:'right'}}>Valor unit.</th>
+                    <th className="col-value" style={{textAlign:'right'}}>Subtotal</th>
+                    <th className="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pessoais.map(p => {
+                    const subtotal = (p.value || 0) * (p.qty || 1);
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <input
+                            className="cell-input qty"
+                            type="number" min="1"
+                            value={p.qty}
+                            onChange={e => updatePessoal(p.id, { qty: parseInt(e.target.value)||1 })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="cell-input"
+                            value={p.name}
+                            onChange={e => updatePessoal(p.id, { name: e.target.value })}
+                            placeholder="Ex: Roupa branca, sandália, toalha..."
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="cell-input price"
+                            value={p.value == null ? "" : p.value.toString().replace(".", ",")}
+                            onChange={e => updatePessoalValue(p.id, e.target.value)}
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className="cell-input price" style={{padding:'6px 4px', color: 'var(--ink-soft)', fontVariantNumeric: 'tabular-nums'}}>
+                          {p.value != null ? formatBRL(subtotal) : "—"}
+                        </td>
+                        <td>
+                          <button className="row-action-btn" onClick={() => deletePessoal(p.id)} title="Remover">×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {pessoais.length === 0 && (
+                    <tr><td colSpan="5" style={{textAlign:'center', padding:'24px', color:'var(--ink-soft)', fontStyle:'italic'}}>
+                      Nenhum item pessoal. Clique em "Novo item pessoal" pra adicionar (roupas, adereços, etc).
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
       {activeTab === "gastos" && (
         <>
           {/* EXPENSES SUMMARY (just one stat) */}
@@ -1621,6 +2058,9 @@ function App() {
           items={items}
           stores={stores}
           expenses={expenses}
+          bichos={bichos}
+          pessoais={pessoais}
+          oferendaValue={oferendaValue}
           activeTab={activeTab}
           applyActions={applyActions}
         />
@@ -1656,9 +2096,21 @@ function App() {
         />
       )}
 
+      {simpleConfirm && (
+        <SimpleConfirmModal
+          title={simpleConfirm.title}
+          message={simpleConfirm.message}
+          onConfirm={() => {
+            simpleConfirm.onConfirm();
+            setSimpleConfirm(null);
+          }}
+          onCancel={() => setSimpleConfirm(null)}
+        />
+      )}
+
       {backupsOpen && (
         <BackupsModal
-          currentState={{ items, stores, expenses }}
+          currentState={{ items, stores, expenses, bichos, pessoais, oferendaValue }}
           onRestore={restoreBackup}
           onClose={() => setBackupsOpen(false)}
         />
@@ -1740,6 +2192,37 @@ function DestructiveConfirmModal({ title, message, appPassword, onNeedPassword, 
         <div className="modal-buttons">
           <button className="btn" onClick={onCancel}>Cancelar</button>
           <button className="btn danger" onClick={tryConfirm}>Confirmar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== SIMPLE CONFIRM MODAL (sem senha — pra exclusões individuais) ==============
+function SimpleConfirmModal({ title, message, onConfirm, onCancel }) {
+  // Foca o botão cancelar por padrão pra evitar exclusão acidental no Enter
+  const cancelRef = useRef();
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="modal-bg" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2 style={{color: 'var(--red)'}}>{title}</h2>
+        <p>{message}</p>
+        <div className="modal-buttons">
+          <button
+            ref={cancelRef}
+            className="btn"
+            onClick={onCancel}
+            onKeyDown={e => { if (e.key === "Escape") onCancel(); }}
+          >
+            Cancelar
+          </button>
+          <button className="btn danger" onClick={onConfirm}>
+            Sim, excluir
+          </button>
         </div>
       </div>
     </div>
@@ -1886,9 +2369,12 @@ function BackupsModal({ currentState, onRestore, onClose }) {
 // ============== CHAT ==============
 const SYSTEM_PROMPT = `Você é um assistente que ajuda a gerenciar uma planilha de orçamento de itens de feitura de candomblé.
 
-A planilha tem DUAS partes:
-1. COTAÇÃO: itens com nome e quantidade, e 4 colunas de lojas onde se anotam preços (R$).
-2. GASTOS AVULSOS: lista simples de descrição + valor, para gastos que não estão na cotação (ex: mercado, transporte, taxa, contribuição rateada, oferenda, etc).
+A planilha tem CINCO partes (abas):
+1. COTAÇÃO: itens com nome e quantidade, e 4 colunas de lojas onde se anotam preços (R$). Ex: ibás, miçangas, velas, ferramentas.
+2. BICHOS: lista de animais para a feitura (cabrito, frangos, etc). Cada bicho tem qtd + valor unitário (sem comparação de lojas).
+3. OFERENDA EXUS: campo único com valor da oferenda combinada com o pai de santo.
+4. PESSOAIS: compras pessoais (roupas brancas, sandália, toalha, adereços, etc). Cada item tem qtd + valor unitário.
+5. GASTOS AVULSOS: lista simples de descrição + valor, para gastos imprevistos (uber, mercado, taxa, etc).
 
 Você recebe MENSAGENS do usuário em português (texto ou foto de lista manuscrita) e deve retornar um JSON com as ações que devem ser aplicadas.
 
@@ -1906,6 +2392,21 @@ AÇÕES NA COTAÇÃO:
 - {"type":"set_qty","item":"nome do item","qty":5}
 - {"type":"rename_store","store":"nome atual da loja","new_name":"novo nome"}
 
+AÇÕES EM BICHOS:
+- {"type":"add_bicho","name":"frango","qty":7,"value":30.00}  // value opcional
+- {"type":"remove_bicho","name":"frango"}
+- {"type":"set_bicho_value","name":"frango","value":35.00}
+- {"type":"set_bicho_qty","name":"frango","qty":10}
+
+AÇÕES EM PESSOAIS:
+- {"type":"add_pessoal","name":"sandália branca","qty":1,"value":80.00}  // value opcional
+- {"type":"remove_pessoal","name":"sandália branca"}
+- {"type":"set_pessoal_value","name":"sandália branca","value":95.00}
+- {"type":"set_pessoal_qty","name":"sandália branca","qty":2}
+
+AÇÃO NA OFERENDA EXUS:
+- {"type":"set_oferenda_value","value":500.00}
+
 AÇÕES NOS GASTOS AVULSOS:
 - {"type":"add_expense","description":"Mercado","value":700.00}
 - {"type":"remove_expense","description":"Mercado"}
@@ -1913,21 +2414,22 @@ AÇÕES NOS GASTOS AVULSOS:
 
 REGRAS:
 1. Para preços/valores, sempre use número decimal com ponto (15.50, não "R$ 15,50" nem "15,50").
-2. DECIDIR ENTRE COTAÇÃO E GASTO AVULSO:
-   - Se o usuário menciona uma loja → COTAÇÃO (set_price).
-   - Se a descrição parece um item da lista de feitura (vela, fava, miçanga, etc) → COTAÇÃO.
-   - Se for algo genérico que não tá na lista (mercado, uber, transporte, gasolina, taxa, contribuição, oferenda, almoço) → GASTO AVULSO.
-   - "Adiciona mercado 700" / "gastei 50 de uber" / "taxa de 100" → add_expense.
-   - "R$15 na vela branca, Loja Oxum" → set_price.
-3. Para fotos de listas: extraia tudo que aparece. Se for uma lista de compras de loja específica, use set_price. Se forem gastos avulsos misturados, use add_expense.
-4. Combine "item" com o nome mais próximo da lista atual quando fizer sentido.
+2. DECIDIR ENTRE AS ABAS:
+   - Se menciona uma LOJA (Loja 1/2/3/4 ou nome) e item de feitura → COTAÇÃO (set_price).
+   - Se é animal/bicho da feitura (cabrito, frango, franga, d'angola, pombo) → BICHO. Ex: "30 reais no frango" → set_bicho_value.
+   - Se é compra pessoal (roupa branca, sandália, toalha, conta de fio, brinco, adereço) → PESSOAIS. Ex: "comprei sandália por 80" → add_pessoal.
+   - Se menciona "oferenda exus" ou "oferenda dos exus" com um valor → OFERENDA. Ex: "oferenda dos exus 500" → set_oferenda_value.
+   - Se é gasto solto não relacionado à lista (uber, gasolina, mercado, taxa, contribuição) → GASTO AVULSO.
+   - Se item já está na cotação por nome (vela, fava, miçanga, ibá, ferramenta, etc) → COTAÇÃO.
+3. Para fotos de listas: extraia tudo que aparece e classifique cada linha pela aba correta.
+4. Combine "item"/"name" com o nome mais próximo da lista atual quando fizer sentido (busca é por similaridade, então pode escrever de forma simplificada).
 5. Se a mensagem não pede mudança, deixe "actions" vazio.
 6. Se uma loja mencionada não existe nas 4 lojas atuais, use rename_store pra renomear uma vazia ou avise no reply.
-7. Seja conciso e direto. Não explique demais.`;
+7. Seja conciso e direto. Não explique demais. Use a aba ativa como dica de contexto, mas não dependa só dela: o usuário pode estar em qualquer aba e pedir coisa de outra.`;
 
-function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expenses, activeTab, applyActions }) {
+function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expenses, bichos, pessoais, oferendaValue, activeTab, applyActions }) {
   const [messages, setMessages] = useState([
-    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nGastos avulsos:\n• \"Adiciona mercado 700 reais\"\n• \"Gastei 50 de uber\"\n• \"Taxa de 150\"\n\n📷 Envie a foto de uma lista\n🎤 Ou aperte o microfone e fale" },
+    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nBichos:\n• \"Frango 35 cada\"\n• \"Cabrito 280\"\n\nOferenda exus:\n• \"Oferenda dos exus 500\"\n\nPessoais:\n• \"Comprei sandália branca por 80\"\n• \"Adiciona toalha branca 45\"\n\nGastos avulsos:\n• \"Gastei 50 de uber\"\n• \"Mercado 700\"\n\n📷 Envie foto de uma lista\n🎤 Ou aperte o microfone e fale" },
   ]);
   const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState(null);
@@ -2093,14 +2595,35 @@ function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expens
     const expensesList = expenses.map(e =>
       `- ${e.description}: ${e.value != null ? `R$ ${e.value.toFixed(2)}` : "—"}`
     ).join("\n");
-    return `ABA ATIVA: ${activeTab === "cotacao" ? "Cotação" : "Gastos avulsos"}
+    const bichosList = bichos.map(b =>
+      `- (qtd ${b.qty}) ${b.name}: ${b.value != null ? `R$ ${b.value.toFixed(2)}` : "—"}`
+    ).join("\n");
+    const pessoaisList = pessoais.map(p =>
+      `- (qtd ${p.qty}) ${p.name}: ${p.value != null ? `R$ ${p.value.toFixed(2)}` : "—"}`
+    ).join("\n");
+    const tabLabel = ({
+      cotacao: "Cotação",
+      bichos: "Bichos",
+      oferenda: "Oferenda Exus",
+      pessoais: "Pessoais",
+      gastos: "Gastos avulsos",
+    })[activeTab] || activeTab;
+    return `ABA ATIVA: ${tabLabel}
 
 LISTA ATUAL DE ITENS (cotação):
 ${itemsList || "(vazia)"}
 
 NOMES DAS LOJAS: ${stores.map((s,i)=>`${i+1}=${s}`).join(", ")}
 
-GASTOS AVULSOS ATUAIS:
+BICHOS:
+${bichosList || "(nenhum)"}
+
+OFERENDA PARA OS EXUS: ${oferendaValue != null ? `R$ ${oferendaValue.toFixed(2)}` : "(não definido)"}
+
+COMPRAS PESSOAIS:
+${pessoaisList || "(nenhuma)"}
+
+GASTOS AVULSOS:
 ${expensesList || "(nenhum)"}`;
   };
 
