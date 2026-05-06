@@ -836,6 +836,120 @@ const saveRemoteState = async (state) => {
   if (error) throw error;
 };
 
+// ============== BACKUP / RESTORE ==============
+const BACKUPS_TABLE = "orcamento_backups";
+const LAST_BACKUP_KEY = "last_auto_backup_at";
+
+// Cria um snapshot no banco
+const createBackup = async (state, label = null) => {
+  const sb = await initSupabase();
+  const payload = {
+    items: state.items,
+    stores: state.stores,
+    expenses: state.expenses,
+  };
+  const { data, error } = await sb
+    .from(BACKUPS_TABLE)
+    .insert({ data: payload, label })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// Lista os últimos backups (mais recentes primeiro)
+const listBackups = async (limit = 50) => {
+  const sb = await initSupabase();
+  const { data, error } = await sb
+    .from(BACKUPS_TABLE)
+    .select("id, created_at, label, data")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+};
+
+// Apaga um backup
+const deleteBackup = async (id) => {
+  const sb = await initSupabase();
+  const { error } = await sb.from(BACKUPS_TABLE).delete().eq("id", id);
+  if (error) throw error;
+};
+
+// Apaga backups com mais de 30 dias (limpeza automática)
+const cleanOldBackups = async () => {
+  const sb = await initSupabase();
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  await sb.from(BACKUPS_TABLE).delete().lt("created_at", cutoff);
+};
+
+// Backup automático: 1x ao dia (se já tiver feito hoje, não faz)
+const ensureDailyBackup = async (state) => {
+  try {
+    const last = localStorage.getItem(LAST_BACKUP_KEY);
+    const today = new Date().toDateString(); // ex: "Mon May 06 2026"
+    if (last === today) return false; // já fez backup hoje
+    // Faz o backup automático
+    await createBackup(state, "Automático diário");
+    localStorage.setItem(LAST_BACKUP_KEY, today);
+    // Aproveita pra limpar antigos
+    cleanOldBackups().catch(() => {});
+    return true;
+  } catch (e) {
+    console.error("Erro no backup automático:", e);
+    return false;
+  }
+};
+
+// Formata data pra exibição
+const formatBackupDate = (iso) => {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch (e) {
+    return iso;
+  }
+};
+
+// ============== EXPORT / IMPORT JSON ==============
+const downloadJSON = (state) => {
+  const payload = {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    items: state.items,
+    stores: state.stores,
+    expenses: state.expenses,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  a.href = url;
+  a.download = `orcamento-feitura-${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+const parseImportedJSON = (text) => {
+  const obj = JSON.parse(text);
+  // aceita formato exportado (com items/stores/expenses no topo)
+  // ou formato bruto (mesma estrutura aninhada em "data")
+  const src = obj.data || obj;
+  if (!Array.isArray(src.items)) throw new Error("Arquivo inválido: faltam itens");
+  return {
+    items: src.items,
+    stores: Array.isArray(src.stores) && src.stores.length === 4
+      ? src.stores
+      : ["Loja 1", "Loja 2", "Loja 3", "Loja 4"],
+    expenses: Array.isArray(src.expenses) ? src.expenses : [],
+  };
+};
+
 // ============== APP ==============
 function App() {
   // Estado inicial vem do localStorage (instantâneo) — depois é sobrescrito pelo Supabase
@@ -849,6 +963,9 @@ function App() {
   const [showKeyModal, setShowKeyModal] = useState(false);
   // Modal de confirmação destrutiva (pede senha pra resetar/limpar)
   const [destructiveAction, setDestructiveAction] = useState(null); // { title, message, onConfirm }
+  // Modal de backups
+  const [backupsOpen, setBackupsOpen] = useState(false);
+  const importFileRef = useRef();
 
   // Sincronização: status visível pro usuário
   // "loading" | "synced" | "saving" | "offline"
@@ -898,6 +1015,20 @@ function App() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ====== BACKUP AUTOMÁTICO DIÁRIO ======
+  // Roda 1 vez por dia, depois que o estado já foi carregado/sincronizado
+  useEffect(() => {
+    if (!initialLoadDoneRef.current) return;
+    // Espera 5s depois do load pra não congestionar a inicialização
+    const timer = setTimeout(() => {
+      // Só faz backup se tiver dados de verdade
+      if (items.length === 0 && expenses.length === 0) return;
+      ensureDailyBackup({ items, stores, expenses }).catch(() => {});
+    }, 5000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialLoadDoneRef.current]);
 
   // ====== ESCUTA REALTIME ======
   useEffect(() => {
@@ -1052,6 +1183,57 @@ function App() {
       message: "Vai apagar TODOS os preços (mantém a lista de itens). Digite a senha do app pra confirmar.",
       onConfirm: () => {
         setItems(prev => prev.map(it => ({ ...it, prices: [null,null,null,null] })));
+      },
+    });
+  };
+
+  // --- backup / restore / export / import ---
+  const handleExport = () => {
+    downloadJSON({ items, stores, expenses });
+  };
+
+  const handleImportClick = () => {
+    importFileRef.current?.click();
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = parseImportedJSON(ev.target.result);
+        setDestructiveAction({
+          title: "Importar arquivo",
+          message: `Vai SUBSTITUIR os dados atuais pelo conteúdo do arquivo (${parsed.items.length} itens, ${parsed.expenses.length} gastos). Digite a senha pra confirmar.`,
+          onConfirm: () => {
+            // Cria backup antes de substituir
+            createBackup({ items, stores, expenses }, "Antes de importar arquivo").catch(() => {});
+            setItems(parsed.items);
+            setStores(parsed.stores);
+            setExpenses(parsed.expenses);
+          },
+        });
+      } catch (err) {
+        alert("Arquivo inválido: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const restoreBackup = (backup) => {
+    setDestructiveAction({
+      title: "Restaurar backup",
+      message: `Vai SUBSTITUIR os dados atuais pelo backup de ${formatBackupDate(backup.created_at)}. Digite a senha pra confirmar.`,
+      onConfirm: () => {
+        // Antes de restaurar, salva o estado atual como backup
+        createBackup({ items, stores, expenses }, "Antes de restaurar").catch(() => {});
+        const d = backup.data || {};
+        if (Array.isArray(d.items)) setItems(d.items);
+        if (Array.isArray(d.stores) && d.stores.length === 4) setStores(d.stores);
+        if (Array.isArray(d.expenses)) setExpenses(d.expenses);
+        setBackupsOpen(false);
       },
     });
   };
@@ -1262,6 +1444,22 @@ function App() {
             <button className="btn" onClick={() => setShowKeyModal(true)}>
               {appPassword ? "🔓 Trocar senha" : "🔒 Acessar IA"}
             </button>
+            <button className="btn" onClick={() => setBackupsOpen(true)} title="Ver e restaurar backups">
+              💾 Backups
+            </button>
+            <button className="btn" onClick={handleExport} title="Baixar JSON">
+              ⬇ Exportar
+            </button>
+            <button className="btn" onClick={handleImportClick} title="Restaurar de arquivo JSON">
+              ⬆ Importar
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={handleImportFile}
+              style={{display: 'none'}}
+            />
             <button className="btn" onClick={clearPrices}>Limpar preços</button>
             <button className="btn danger" onClick={resetAll}>↺ Resetar tudo</button>
           </div>
@@ -1355,6 +1553,9 @@ function App() {
             <button className="btn primary" onClick={addExpense}>＋ Novo gasto</button>
             <button className="btn" onClick={() => setShowKeyModal(true)}>
               {appPassword ? "🔓 Trocar senha" : "🔒 Acessar IA"}
+            </button>
+            <button className="btn" onClick={() => setBackupsOpen(true)} title="Ver e restaurar backups">
+              💾 Backups
             </button>
             <button className="btn danger" onClick={clearExpenses}>Limpar gastos</button>
           </div>
@@ -1454,6 +1655,14 @@ function App() {
           onCancel={() => setDestructiveAction(null)}
         />
       )}
+
+      {backupsOpen && (
+        <BackupsModal
+          currentState={{ items, stores, expenses }}
+          onRestore={restoreBackup}
+          onClose={() => setBackupsOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1531,6 +1740,143 @@ function DestructiveConfirmModal({ title, message, appPassword, onNeedPassword, 
         <div className="modal-buttons">
           <button className="btn" onClick={onCancel}>Cancelar</button>
           <button className="btn danger" onClick={tryConfirm}>Confirmar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== BACKUPS MODAL ==============
+function BackupsModal({ currentState, onRestore, onClose }) {
+  const [backups, setBackups] = useState(null); // null = loading
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const reload = async () => {
+    setError("");
+    try {
+      const list = await listBackups(50);
+      setBackups(list);
+    } catch (e) {
+      setError("Erro ao carregar backups: " + e.message);
+      setBackups([]);
+    }
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const handleCreateNow = async () => {
+    if (creating) return;
+    setCreating(true);
+    setError("");
+    try {
+      await createBackup(currentState, "Manual");
+      await reload();
+    } catch (e) {
+      setError("Erro ao criar backup: " + e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm("Apagar este backup?")) return;
+    setDeletingId(id);
+    try {
+      await deleteBackup(id);
+      setBackups(prev => prev.filter(b => b.id !== id));
+    } catch (e) {
+      setError("Erro ao apagar: " + e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth: 600, maxHeight: '85vh', display: 'flex', flexDirection: 'column'}}>
+        <h2>💾 Backups</h2>
+        <p style={{fontSize: 12}}>
+          Snapshots do orçamento. Backups manuais e automáticos diários ficam guardados por 30 dias.
+        </p>
+
+        <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
+          <button
+            className="btn primary"
+            onClick={handleCreateNow}
+            disabled={creating}
+          >
+            {creating ? "Criando..." : "＋ Criar backup agora"}
+          </button>
+          <button className="btn" onClick={reload}>↻ Recarregar</button>
+        </div>
+
+        {error && (
+          <p style={{color: 'var(--red)', fontSize: 12, marginBottom: 8}}>{error}</p>
+        )}
+
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          border: '1px solid var(--line)',
+          borderRadius: 6,
+          background: '#fff',
+          minHeight: 200,
+          maxHeight: '50vh',
+        }}>
+          {backups === null && (
+            <div style={{padding: 20, textAlign: 'center', color: 'var(--ink-soft)'}}>
+              Carregando...
+            </div>
+          )}
+          {backups !== null && backups.length === 0 && (
+            <div style={{padding: 20, textAlign: 'center', color: 'var(--ink-soft)', fontStyle: 'italic'}}>
+              Nenhum backup ainda. Clique em "Criar backup agora" pra fazer o primeiro.
+            </div>
+          )}
+          {backups !== null && backups.map(b => {
+            const itemsCount = b.data?.items?.length || 0;
+            const expensesCount = b.data?.expenses?.length || 0;
+            return (
+              <div key={b.id} style={{
+                padding: 10,
+                borderBottom: '1px solid var(--line-soft)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}>
+                <div style={{flex: 1, minWidth: 180}}>
+                  <div style={{fontWeight: 600, fontSize: 13}}>
+                    {formatBackupDate(b.created_at)}
+                  </div>
+                  <div style={{fontSize: 11, color: 'var(--ink-soft)'}}>
+                    {b.label || "—"} · {itemsCount} itens · {expensesCount} gastos
+                  </div>
+                </div>
+                <button
+                  className="btn"
+                  onClick={() => onRestore(b)}
+                  style={{fontSize: 12, padding: '4px 10px'}}
+                >
+                  Restaurar
+                </button>
+                <button
+                  className="btn danger"
+                  onClick={() => handleDelete(b.id)}
+                  disabled={deletingId === b.id}
+                  style={{fontSize: 12, padding: '4px 10px'}}
+                >
+                  {deletingId === b.id ? "..." : "×"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="modal-buttons" style={{marginTop: 12}}>
+          <button className="btn" onClick={onClose}>Fechar</button>
         </div>
       </div>
     </div>
