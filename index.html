@@ -730,11 +730,12 @@ const parsePrice = (s) => {
   return isNaN(n) ? null : n;
 };
 
-// Formata número pra exibição em campo editável (sem R$, com vírgula)
+// Formata número pra exibição em campo editável (com R$, vírgula)
 const formatPriceForInput = (n) => {
   if (n == null || isNaN(n)) return "";
-  // Mantém até 2 casas decimais, com vírgula
-  return n.toFixed(2).replace(".", ",").replace(/,00$/, "");
+  // Mantém até 2 casas decimais, com vírgula. Adiciona R$ na frente.
+  const num = n.toFixed(2).replace(".", ",").replace(/,00$/, "");
+  return `R$ ${num}`;
 };
 
 // fuzzy find item by name (case insensitive, accent insensitive, partial)
