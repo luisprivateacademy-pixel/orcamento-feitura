@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Orçamento de Feitura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5efe2;
+    --bg-paper: #faf6ec;
+    --ink: #1f1a14;
+    --ink-soft: #5a4f3f;
+    --line: #d9cdb3;
+    --line-soft: #ece1c8;
+    --accent: #b8893a;       /* dourado Oxum */
+    --accent-deep: #8a6420;
+    --green: #4a7c4e;        /* menor preço */
+    --green-bg: #d8e8d4;
+    --red: #8b3a2b;
+    --shadow: 0 1px 0 rgba(31,26,20,0.04), 0 6px 18px rgba(31,26,20,0.06);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 10% 0%, rgba(184,137,58,0.06) 0%, transparent 40%),
+      radial-gradient(circle at 90% 100%, rgba(184,137,58,0.05) 0%, transparent 40%);
+    min-height: 100vh;
+  }
+  .app {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 20px 120px;
+  }
+  header {
+    text-align: center;
+    padding: 20px 0 28px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+  }
+  header h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 600;
+    font-size: clamp(28px, 5vw, 42px);
+    letter-spacing: 0.02em;
+    margin: 0;
+    color: var(--ink);
+  }
+  header h1 .ornament {
+    color: var(--accent);
+    font-style: italic;
+    font-weight: 500;
+  }
+  header p {
+    margin: 6px 0 0;
+    color: var(--ink-soft);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* SUMMARY */
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .stat .label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+  .stat .value {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .stat .value.green { color: var(--green); }
+  .stat .value.gold { color: var(--accent-deep); }
+
+  /* TOOLBAR */
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    align-items: center;
+  }
+  .btn {
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:hover { background: #fff; border-color: var(--accent); }
+  .btn.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .btn.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+  .btn.danger { color: var(--red); }
+  .btn.danger:hover { background: #fff; border-color: var(--red); }
+
+  /* TABLE */
+  .table-wrap {
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+  }
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 700px;
+  }
+  thead th {
+    background: #efe6d2;
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 10px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line-soft);
+    position: sticky;
+    top: 0;
+  }
+  thead th:last-child { border-right: none; }
+  thead th.col-item { width: 32%; min-width: 200px; }
+  thead th.col-qty { width: 70px; }
+  thead th.col-store { width: 14%; min-width: 110px; }
+  thead th.col-actions { width: 50px; }
+
+  .store-name-input {
+    background: transparent;
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink);
+    width: 100%;
+    padding: 0;
+    outline: none;
+    border-bottom: 1px dashed transparent;
+  }
+  .store-name-input:hover, .store-name-input:focus {
+    border-bottom-color: var(--accent);
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(184,137,58,0.04); }
+  tbody td {
+    padding: 6px 8px;
+    border-right: 1px solid var(--line-soft);
+    vertical-align: middle;
+  }
+  tbody td:last-child { border-right: none; }
+
+  .cell-input {
+    background: transparent;
+    border: none;
+    font: inherit;
+    color: var(--ink);
+    width: 100%;
+    padding: 6px 4px;
+    outline: none;
+    border-radius: 4px;
+  }
+  .cell-input:focus {
+    background: #fff;
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .cell-input.qty { text-align: center; }
+  .cell-input.price { text-align: right; font-variant-numeric: tabular-nums; }
+
+  td.price-cell { padding: 0; }
+  td.price-cell.lowest {
+    background: var(--green-bg);
+    position: relative;
+  }
+  td.price-cell.lowest::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--green);
+  }
+  td.price-cell.lowest .cell-input { color: var(--green); font-weight: 600; }
+
+  .row-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .row-action-btn:hover { color: var(--red); background: rgba(139,58,43,0.1); }
+
+  /* CHAT */
+  .chat-fab {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(138,100,32,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    z-index: 100;
+    transition: transform 0.2s;
+  }
+  .chat-fab:hover { transform: scale(1.05); background: var(--accent-deep); }
+
+  .chat-panel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 380px;
+    max-width: calc(100vw - 24px);
+    height: 560px;
+    max-height: calc(100vh - 40px);
+    background: var(--bg-paper);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(31,26,20,0.2);
+    display: flex;
+    flex-direction: column;
+    z-index: 200;
+    overflow: hidden;
+  }
+  .chat-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #efe6d2;
+  }
+  .chat-header h3 {
+    margin: 0;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .chat-header button {
+    background: transparent; border: none; cursor: pointer;
+    font-size: 20px; color: var(--ink-soft); padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .chat-header button:hover { background: rgba(0,0,0,0.05); }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .msg {
+    padding: 10px 12px;
+    border-radius: 10px;
+    max-width: 85%;
+    font-size: 13px;
+    line-height: 1.45;
+    word-wrap: break-word;
+  }
+  .msg.user {
+    background: var(--accent);
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 2px;
+  }
+  .msg.ai {
+    background: #fff;
+    border: 1px solid var(--line);
+    align-self: flex-start;
+    border-bottom-left-radius: 2px;
+  }
+  .msg.system {
+    background: transparent;
+    color: var(--ink-soft);
+    font-style: italic;
+    font-size: 11px;
+    text-align: center;
+    align-self: center;
+    max-width: 100%;
+  }
+  .msg img { max-width: 100%; border-radius: 6px; margin-top: 6px; display: block; }
+  .msg .actions-applied {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .msg .actions-applied div { margin-top: 2px; }
+
+  .typing { display: inline-flex; gap: 3px; padding: 4px 0; }
+  .typing span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ink-soft);
+    animation: typing 1.2s infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typing {
+    0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  .chat-input-area {
+    border-top: 1px solid var(--line);
+    padding: 10px;
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+    background: #fff;
+  }
+  .chat-input {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    resize: none;
+    min-height: 36px;
+    max-height: 100px;
+    outline: none;
+  }
+  .chat-input:focus { border-color: var(--accent); }
+  .chat-btn-icon {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .chat-btn-icon:hover { background: var(--accent-deep); }
+  .chat-btn-icon.secondary {
+    background: transparent;
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+  }
+  .chat-btn-icon.secondary:hover { background: var(--line-soft); }
+
+  .image-preview {
+    padding: 8px 10px;
+    border-top: 1px solid var(--line);
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .image-preview img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; }
+
+  /* API KEY MODAL */
+  .modal-bg {
+    position: fixed; inset: 0;
+    background: rgba(31,26,20,0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 300; padding: 20px;
+  }
+  .modal {
+    background: var(--bg-paper);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 440px;
+    width: 100%;
+    border: 1px solid var(--line);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  }
+  .modal h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 24px;
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  .modal p { color: var(--ink-soft); font-size: 13px; margin: 0 0 14px; line-height: 1.5; }
+  .modal input {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 13px;
+    margin-bottom: 12px;
+    outline: none;
+  }
+  .modal input:focus { border-color: var(--accent); }
+  .modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+  }
+  .tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 18px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+    cursor: pointer;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active {
+    color: var(--accent-deep);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+  .tab .count {
+    display: inline-block;
+    margin-left: 6px;
+    background: var(--line-soft);
+    color: var(--ink-soft);
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 10px;
+  }
+  .tab.active .count { background: var(--accent); color: #fff; }
+
+  /* GRAND TOTAL BAR */
+  .grand-total {
+    background: var(--ink);
+    color: var(--bg);
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .grand-total .label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+  .grand-total .value {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .grand-total .breakdown {
+    font-size: 12px;
+    opacity: 0.8;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* EXPENSES TABLE - simpler than cotação */
+  .expenses-table th.col-desc { width: auto; }
+  .expenses-table th.col-value { width: 160px; }
+
+  /* MOBILE */
+  @media (max-width: 700px) {
+    .app { padding: 12px 10px 100px; }
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    .stat .value { font-size: 18px; }
+    header { padding: 12px 0 18px; margin-bottom: 16px; }
+    .grand-total { padding: 12px 14px; }
+    .grand-total .value { font-size: 22px; }
+    .tab { padding: 10px 12px; font-size: 12px; }
+    .chat-panel {
+      bottom: 0; right: 0; left: 0;
+      width: 100%; max-width: 100%;
+      border-radius: 12px 12px 0 0;
+      height: 80vh;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ============== INITIAL DATA ==============
+const INITIAL_ITEMS = [
+  { qty: 1, name: "Ibá branco para Oxalá" },
+  { qty: 1, name: "Ibá branco para Guian" },
+  { qty: 1, name: "Ibá para Iemanjá" },
+  { qty: 1, name: "Ferramenta de Ogum" },
+  { qty: 1, name: "Ibá de Oxum" },
+  { qty: 2, name: "Alguidares nº 3" },
+  { qty: 1, name: "Ferramenta de Oxóssi prateada e cromada" },
+  { qty: 1, name: "Ofá miniatura prateado cromado" },
+  { qty: 2, name: "Cornos" },
+  { qty: 1, name: "Miçangas azul claro leitosa (500g)" },
+  { qty: 1, name: "Miçanga verde leitosa (50g)" },
+  { qty: 6, name: "Firmas brancas rajada de azul claro" },
+  { qty: 2, name: "Firmas verde leitosa" },
+  { qty: 1, name: "Xaôro prateado" },
+  { qty: 1, name: "Pombo miniatura de chumbo" },
+  { qty: 1, name: "Pilão miniatura de chumbo" },
+  { qty: 1, name: "Abebê dourado miniatura" },
+  { qty: 3, name: "Conchas bonitas" },
+  { qty: 7, name: "Ides pequenos de ferro" },
+  { qty: 23, name: "Ides prateados" },
+  { qty: 8, name: "Ides dourados" },
+  { qty: 1, name: "Bigorna miniatura" },
+  { qty: 3, name: "Pregos de dormente" },
+  { qty: 3, name: "Ferraduras" },
+  { qty: 1, name: "Búzios médios (200g)" },
+  { qty: 2, name: "Favas de Oxalá" },
+  { qty: 2, name: "Favas de Iemanjá" },
+  { qty: 1, name: "Fava de Oxóssi pinha" },
+  { qty: 1, name: "Fava de Ogum" },
+  { qty: 1, name: "Fava de Oxum" },
+  { qty: 4, name: "Cristais" },
+  { qty: 38, name: "Moedas antigas" },
+  { qty: 7, name: "Favas da prosperidade" },
+  { qty: 7, name: "Favas da fortuna" },
+  { qty: 1, name: "Fava de aridan" },
+  { qty: 1, name: "Banha de ori (100g)" },
+  { qty: 7, name: "Retros de linha" },
+  { qty: 1, name: "Cordone encerado" },
+  { qty: 1, name: "Palha da costa (500g)" },
+  { qty: 5, name: "Sabões da costa" },
+  { qty: 5, name: "Pembas brancas" },
+  { qty: 3, name: "Pembas verdes" },
+  { qty: 3, name: "Pembas vermelhas" },
+  { qty: 3, name: "Pembas amarelas" },
+  { qty: 3, name: "Pembas azuis" },
+  { qty: 5, name: "Pembas marrons" },
+  { qty: 3, name: "Pembas roxas" },
+  { qty: 4, name: "Obis e Orobôs" },
+  { qty: 1, name: "Pacote de velas de 7 dias com 10" },
+  { qty: 5, name: "Pacotes de velas finas" },
+  { qty: 2, name: "Decisas" },
+  { qty: 1, name: "Cabrito branco" },
+  { qty: 7, name: "Frangos" },
+  { qty: 3, name: "Frangas" },
+  { qty: 1, name: "D'angola branca" },
+  { qty: 1, name: "Pombo claro" },
+  { qty: 1, name: "Pombo branco" },
+];
+
+const STORAGE_KEY = "candomble_orcamento_v1";
+const APP_PASSWORD_STORAGE = "app_password";
+
+// ============== HELPERS ==============
+const newRow = (qty=1, name="", prices=[null,null,null,null]) => ({
+  id: crypto.randomUUID(),
+  qty, name,
+  prices: [...prices],
+});
+
+const newExpense = (description="", value=null) => ({
+  id: crypto.randomUUID(),
+  description, value,
+});
+
+const formatBRL = (n) => {
+  if (n == null || isNaN(n)) return "—";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+};
+
+const parsePrice = (s) => {
+  if (s === "" || s == null) return null;
+  if (typeof s === "number") return s;
+  // accept "15", "15,50", "15.50", "R$ 15,50"
+  const cleaned = String(s).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+};
+
+// fuzzy find item by name (case insensitive, accent insensitive, partial)
+const norm = (s) => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+const findItemIndex = (items, query) => {
+  const q = norm(query);
+  if (!q) return -1;
+  // exact
+  let idx = items.findIndex(it => norm(it.name) === q);
+  if (idx >= 0) return idx;
+  // contains
+  idx = items.findIndex(it => norm(it.name).includes(q) || q.includes(norm(it.name)));
+  if (idx >= 0) return idx;
+  // word overlap
+  const qWords = q.split(/\s+/).filter(w => w.length > 2);
+  let best = -1, bestScore = 0;
+  items.forEach((it, i) => {
+    const nm = norm(it.name);
+    const score = qWords.filter(w => nm.includes(w)).length;
+    if (score > bestScore) { bestScore = score; best = i; }
+  });
+  return bestScore >= Math.max(1, Math.floor(qWords.length/2)) ? best : -1;
+};
+
+const findStoreIndex = (storeNames, query) => {
+  const q = norm(query);
+  if (!q) return -1;
+  let idx = storeNames.findIndex(n => norm(n) === q);
+  if (idx >= 0) return idx;
+  idx = storeNames.findIndex(n => norm(n).includes(q) || q.includes(norm(n)));
+  return idx;
+};
+
+// ============== STATE PERSISTENCE ==============
+const loadState = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.items && parsed.stores) {
+        return {
+          items: parsed.items,
+          stores: parsed.stores,
+          expenses: parsed.expenses || [],
+        };
+      }
+    }
+  } catch (e) {}
+  return {
+    items: INITIAL_ITEMS.map(it => newRow(it.qty, it.name)),
+    stores: ["Loja 1", "Loja 2", "Loja 3", "Loja 4"],
+    expenses: [],
+  };
+};
+
+// ============== APP ==============
+function App() {
+  const initial = useMemo(() => loadState(), []);
+  const [items, setItems] = useState(initial.items);
+  const [stores, setStores] = useState(initial.stores);
+  const [expenses, setExpenses] = useState(initial.expenses || []);
+  const [activeTab, setActiveTab] = useState("cotacao"); // "cotacao" | "gastos"
+  const [chatOpen, setChatOpen] = useState(false);
+  const [appPassword, setAppPassword] = useState(() => localStorage.getItem(APP_PASSWORD_STORAGE) || "");
+  const [showKeyModal, setShowKeyModal] = useState(false);
+
+  // persist
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, stores, expenses }));
+    } catch (e) {}
+  }, [items, stores, expenses]);
+
+  // --- summary calc ---
+  const summary = useMemo(() => {
+    let totalLowest = 0;
+    let quoted = 0;
+    const storesActive = new Set();
+    let totalAllPrices = 0;
+    let pricesCount = 0;
+    let totalHighest = 0;
+
+    items.forEach(it => {
+      const valid = it.prices.map((p,i) => ({p, i})).filter(x => x.p != null && !isNaN(x.p) && x.p > 0);
+      if (valid.length > 0) {
+        quoted++;
+        const min = Math.min(...valid.map(x => x.p));
+        const max = Math.max(...valid.map(x => x.p));
+        totalLowest += min * (it.qty || 1);
+        totalHighest += max * (it.qty || 1);
+        valid.forEach(x => storesActive.add(x.i));
+      }
+    });
+    const economy = totalHighest - totalLowest;
+    return {
+      totalLowest, quoted, total: items.length,
+      storesActive: storesActive.size, economy,
+    };
+  }, [items]);
+
+  const expensesTotal = useMemo(() => {
+    return expenses.reduce((sum, e) => sum + (e.value || 0), 0);
+  }, [expenses]);
+
+  const grandTotal = summary.totalLowest + expensesTotal;
+
+  // --- expenses ops ---
+  const updateExpense = (id, patch) => {
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  };
+  const updateExpenseValue = (id, raw) => {
+    setExpenses(prev => prev.map(e => e.id === id
+      ? { ...e, value: raw === "" ? null : parsePrice(raw) }
+      : e));
+  };
+  const deleteExpense = (id) => setExpenses(prev => prev.filter(e => e.id !== id));
+  const addExpense = () => setExpenses(prev => [...prev, newExpense("", null)]);
+  const clearExpenses = () => {
+    if (confirm("Apagar todos os gastos avulsos?")) setExpenses([]);
+  };
+
+  // --- table ops ---
+  const updateItem = (id, patch) => {
+    setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
+  };
+  const updatePrice = (id, storeIdx, raw) => {
+    setItems(prev => prev.map(it => {
+      if (it.id !== id) return it;
+      const prices = [...it.prices];
+      prices[storeIdx] = raw === "" ? null : parsePrice(raw);
+      return { ...it, prices };
+    }));
+  };
+  const deleteRow = (id) => setItems(prev => prev.filter(it => it.id !== id));
+  const addRow = () => setItems(prev => [...prev, newRow(1, "")]);
+  const renameStore = (idx, name) => {
+    setStores(prev => prev.map((s,i) => i===idx ? name : s));
+  };
+  const resetAll = () => {
+    if (confirm("Apagar todas as cotações e voltar à lista original?")) {
+      setItems(INITIAL_ITEMS.map(it => newRow(it.qty, it.name)));
+      setStores(["Loja 1", "Loja 2", "Loja 3", "Loja 4"]);
+    }
+  };
+  const clearPrices = () => {
+    if (confirm("Apagar apenas os preços (manter a lista de itens)?")) {
+      setItems(prev => prev.map(it => ({ ...it, prices: [null,null,null,null] })));
+    }
+  };
+
+  // --- AI actions: applied to state ---
+  // actions = [{type: "set_price", item, store, price}, {type:"add_item", name, qty, price?, store?}, {type:"remove_item", item}, {type:"rename_item", item, new_name}, {type:"set_qty", item, qty}, {type:"rename_store", store, new_name}]
+  const applyActions = (actions) => {
+    if (!actions || !actions.length) return [];
+    const applied = [];
+    let curItems = items.map(i => ({...i, prices:[...i.prices]}));
+    let curStores = [...stores];
+    let curExpenses = expenses.map(e => ({...e}));
+
+    for (const a of actions) {
+      try {
+        if (a.type === "set_price") {
+          const price = parsePrice(a.price);
+          if (price == null) { applied.push(`✗ Preço inválido para "${a.item}"`); continue; }
+          let idx = findItemIndex(curItems, a.item);
+          if (idx < 0) {
+            const row = newRow(a.qty || 1, a.item);
+            curItems = [...curItems, row];
+            idx = curItems.length - 1;
+            applied.push(`+ Item criado: ${a.item}`);
+          }
+          const sIdx = a.store ? findStoreIndex(curStores, a.store) : -1;
+          const storeIdx = sIdx >= 0 ? sIdx : 0;
+          const prices = [...curItems[idx].prices];
+          prices[storeIdx] = price;
+          curItems[idx] = { ...curItems[idx], prices };
+          applied.push(`✓ ${formatBRL(price)} em "${curItems[idx].name}" → ${curStores[storeIdx]}`);
+        }
+        else if (a.type === "add_item") {
+          const exists = findItemIndex(curItems, a.name);
+          if (exists >= 0) {
+            if (a.price != null && a.store) {
+              const sIdx = findStoreIndex(curStores, a.store);
+              if (sIdx >= 0) {
+                const prices = [...curItems[exists].prices];
+                prices[sIdx] = parsePrice(a.price);
+                curItems[exists] = { ...curItems[exists], prices };
+                applied.push(`✓ ${formatBRL(parsePrice(a.price))} em "${curItems[exists].name}" → ${curStores[sIdx]}`);
+              }
+            } else {
+              applied.push(`• Já existe: "${a.name}"`);
+            }
+          } else {
+            const prices = [null,null,null,null];
+            if (a.price != null && a.store) {
+              const sIdx = findStoreIndex(curStores, a.store);
+              if (sIdx >= 0) prices[sIdx] = parsePrice(a.price);
+            }
+            curItems = [...curItems, newRow(a.qty || 1, a.name, prices)];
+            applied.push(`+ Adicionado: ${a.name}` + (a.price != null ? ` (${formatBRL(parsePrice(a.price))})` : ""));
+          }
+        }
+        else if (a.type === "remove_item") {
+          const idx = findItemIndex(curItems, a.item);
+          if (idx >= 0) {
+            const removed = curItems[idx].name;
+            curItems = curItems.filter((_, i) => i !== idx);
+            applied.push(`− Removido: ${removed}`);
+          } else {
+            applied.push(`✗ Não encontrado: "${a.item}"`);
+          }
+        }
+        else if (a.type === "rename_item") {
+          const idx = findItemIndex(curItems, a.item);
+          if (idx >= 0) {
+            const old = curItems[idx].name;
+            curItems[idx] = { ...curItems[idx], name: a.new_name };
+            applied.push(`✎ "${old}" → "${a.new_name}"`);
+          }
+        }
+        else if (a.type === "set_qty") {
+          const idx = findItemIndex(curItems, a.item);
+          if (idx >= 0) {
+            curItems[idx] = { ...curItems[idx], qty: parseInt(a.qty) || 1 };
+            applied.push(`✎ Qtd "${curItems[idx].name}": ${a.qty}`);
+          }
+        }
+        else if (a.type === "rename_store") {
+          const sIdx = findStoreIndex(curStores, a.store);
+          if (sIdx >= 0) {
+            const old = curStores[sIdx];
+            curStores = curStores.map((s,i) => i === sIdx ? a.new_name : s);
+            applied.push(`✎ Loja "${old}" → "${a.new_name}"`);
+          }
+        }
+        else if (a.type === "add_expense") {
+          const value = parsePrice(a.value);
+          if (value == null) { applied.push(`✗ Valor inválido para "${a.description}"`); continue; }
+          curExpenses = [...curExpenses, newExpense(a.description || "Gasto", value)];
+          applied.push(`+ Gasto: ${a.description} (${formatBRL(value)})`);
+        }
+        else if (a.type === "remove_expense") {
+          const q = norm(a.description);
+          const idx = curExpenses.findIndex(e => norm(e.description) === q
+            || norm(e.description).includes(q)
+            || q.includes(norm(e.description)));
+          if (idx >= 0) {
+            const removed = curExpenses[idx];
+            curExpenses = curExpenses.filter((_, i) => i !== idx);
+            applied.push(`− Gasto removido: ${removed.description}`);
+          } else {
+            applied.push(`✗ Gasto não encontrado: "${a.description}"`);
+          }
+        }
+        else if (a.type === "set_expense_value") {
+          const value = parsePrice(a.value);
+          const q = norm(a.description);
+          const idx = curExpenses.findIndex(e => norm(e.description) === q
+            || norm(e.description).includes(q)
+            || q.includes(norm(e.description)));
+          if (idx >= 0 && value != null) {
+            curExpenses[idx] = { ...curExpenses[idx], value };
+            applied.push(`✎ Gasto "${curExpenses[idx].description}": ${formatBRL(value)}`);
+          } else {
+            applied.push(`✗ Gasto não encontrado ou valor inválido: "${a.description}"`);
+          }
+        }
+      } catch (e) {
+        applied.push(`✗ Erro: ${e.message}`);
+      }
+    }
+
+    setItems(curItems);
+    setStores(curStores);
+    setExpenses(curExpenses);
+    return applied;
+  };
+
+  // figure out lowest price column per row
+  const lowestStoreIdx = (row) => {
+    const valid = row.prices.map((p,i) => ({p,i})).filter(x => x.p != null && x.p > 0);
+    if (valid.length < 1) return -1;
+    return valid.reduce((min, x) => x.p < min.p ? x : min, valid[0]).i;
+  };
+
+  // ======= Password =======
+  const ensurePassword = () => {
+    if (!appPassword) { setShowKeyModal(true); return false; }
+    return true;
+  };
+
+  return (
+    <div className="app">
+      <header>
+        <h1>Orçamento <span className="ornament">de Feitura</span></h1>
+        <p>Cotação de itens · Comparação de lojas</p>
+      </header>
+
+      {/* GRAND TOTAL BAR */}
+      <div className="grand-total">
+        <div>
+          <div className="label">Total Geral</div>
+          <div className="breakdown">
+            Cotação {formatBRL(summary.totalLowest)} + Gastos {formatBRL(expensesTotal)}
+          </div>
+        </div>
+        <div className="value">{formatBRL(grandTotal)}</div>
+      </div>
+
+      {/* TABS */}
+      <div className="tabs">
+        <button
+          className={`tab ${activeTab === "cotacao" ? "active" : ""}`}
+          onClick={() => setActiveTab("cotacao")}
+        >
+          Cotação <span className="count">{items.length}</span>
+        </button>
+        <button
+          className={`tab ${activeTab === "gastos" ? "active" : ""}`}
+          onClick={() => setActiveTab("gastos")}
+        >
+          Gastos avulsos <span className="count">{expenses.length}</span>
+        </button>
+      </div>
+
+      {activeTab === "cotacao" && (
+        <>
+          {/* SUMMARY */}
+          <div className="summary">
+            <div className="stat">
+              <div className="label">Total (menor preço)</div>
+              <div className="value green">{formatBRL(summary.totalLowest)}</div>
+            </div>
+            <div className="stat">
+              <div className="label">Itens cotados</div>
+              <div className="value">{summary.quoted}<span style={{fontSize:14,color:'var(--ink-soft)'}}> / {summary.total}</span></div>
+            </div>
+            <div className="stat">
+              <div className="label">Lojas ativas</div>
+              <div className="value">{summary.storesActive}<span style={{fontSize:14,color:'var(--ink-soft)'}}> / 4</span></div>
+            </div>
+            <div className="stat">
+              <div className="label">Economia estimada</div>
+              <div className="value gold">{formatBRL(summary.economy)}</div>
+            </div>
+          </div>
+
+          {/* TOOLBAR */}
+          <div className="toolbar">
+            <button className="btn primary" onClick={addRow}>＋ Novo item</button>
+            <button className="btn" onClick={() => setShowKeyModal(true)}>
+              {appPassword ? "🔓 Trocar senha" : "🔒 Acessar IA"}
+            </button>
+            <button className="btn" onClick={clearPrices}>Limpar preços</button>
+            <button className="btn danger" onClick={resetAll}>↺ Resetar tudo</button>
+          </div>
+
+          {/* TABLE */}
+          <div className="table-wrap">
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th className="col-qty">Qtd</th>
+                    <th className="col-item">Item</th>
+                    {stores.map((s, i) => (
+                      <th key={i} className="col-store">
+                        <input
+                          className="store-name-input"
+                          value={s}
+                          onChange={e => renameStore(i, e.target.value)}
+                          placeholder={`Loja ${i+1}`}
+                        />
+                      </th>
+                    ))}
+                    <th className="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(row => {
+                    const lowIdx = lowestStoreIdx(row);
+                    return (
+                      <tr key={row.id}>
+                        <td>
+                          <input
+                            className="cell-input qty"
+                            type="number" min="1"
+                            value={row.qty}
+                            onChange={e => updateItem(row.id, { qty: parseInt(e.target.value)||1 })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="cell-input"
+                            value={row.name}
+                            onChange={e => updateItem(row.id, { name: e.target.value })}
+                            placeholder="Nome do item"
+                          />
+                        </td>
+                        {row.prices.map((p, i) => (
+                          <td key={i} className={`price-cell ${i === lowIdx ? "lowest" : ""}`}>
+                            <input
+                              className="cell-input price"
+                              value={p == null ? "" : p.toString().replace(".", ",")}
+                              onChange={e => updatePrice(row.id, i, e.target.value)}
+                              placeholder="—"
+                            />
+                          </td>
+                        ))}
+                        <td>
+                          <button className="row-action-btn" onClick={() => deleteRow(row.id)} title="Remover linha">×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {items.length === 0 && (
+                    <tr><td colSpan={stores.length + 3} style={{textAlign:'center', padding:'20px', color:'var(--ink-soft)', fontStyle:'italic'}}>
+                      Nenhum item. Clique em "Novo item" ou peça pra IA adicionar.
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === "gastos" && (
+        <>
+          {/* EXPENSES SUMMARY (just one stat) */}
+          <div className="summary" style={{gridTemplateColumns:'1fr 1fr'}}>
+            <div className="stat">
+              <div className="label">Total dos gastos avulsos</div>
+              <div className="value gold">{formatBRL(expensesTotal)}</div>
+            </div>
+            <div className="stat">
+              <div className="label">Quantidade de gastos</div>
+              <div className="value">{expenses.length}</div>
+            </div>
+          </div>
+
+          {/* TOOLBAR */}
+          <div className="toolbar">
+            <button className="btn primary" onClick={addExpense}>＋ Novo gasto</button>
+            <button className="btn" onClick={() => setShowKeyModal(true)}>
+              {appPassword ? "🔓 Trocar senha" : "🔒 Acessar IA"}
+            </button>
+            <button className="btn danger" onClick={clearExpenses}>Limpar gastos</button>
+          </div>
+
+          {/* EXPENSES TABLE */}
+          <div className="table-wrap">
+            <div className="table-scroll">
+              <table className="expenses-table">
+                <thead>
+                  <tr>
+                    <th className="col-desc">Descrição</th>
+                    <th className="col-value" style={{textAlign:'right'}}>Valor</th>
+                    <th className="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenses.map(e => (
+                    <tr key={e.id}>
+                      <td>
+                        <input
+                          className="cell-input"
+                          value={e.description}
+                          onChange={ev => updateExpense(e.id, { description: ev.target.value })}
+                          placeholder="Ex: Mercado, transporte, taxa..."
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="cell-input price"
+                          value={e.value == null ? "" : e.value.toString().replace(".", ",")}
+                          onChange={ev => updateExpenseValue(e.id, ev.target.value)}
+                          placeholder="—"
+                        />
+                      </td>
+                      <td>
+                        <button className="row-action-btn" onClick={() => deleteExpense(e.id)} title="Remover">×</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {expenses.length === 0 && (
+                    <tr><td colSpan="3" style={{textAlign:'center', padding:'24px', color:'var(--ink-soft)', fontStyle:'italic'}}>
+                      Nenhum gasto avulso. Clique em "Novo gasto" ou peça pra IA: <em>"adiciona mercado 700 reais"</em>
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* CHAT */}
+      {!chatOpen && (
+        <button className="chat-fab" onClick={() => setChatOpen(true)} title="Chat com IA">
+          ✦
+        </button>
+      )}
+      {chatOpen && (
+        <ChatPanel
+          onClose={() => setChatOpen(false)}
+          appPassword={appPassword}
+          ensurePassword={ensurePassword}
+          items={items}
+          stores={stores}
+          expenses={expenses}
+          activeTab={activeTab}
+          applyActions={applyActions}
+        />
+      )}
+
+      {showKeyModal && (
+        <PasswordModal
+          currentPassword={appPassword}
+          onSave={(k) => {
+            setAppPassword(k);
+            if (k) localStorage.setItem(APP_PASSWORD_STORAGE, k);
+            else localStorage.removeItem(APP_PASSWORD_STORAGE);
+            setShowKeyModal(false);
+          }}
+          onCancel={() => setShowKeyModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============== PASSWORD MODAL ==============
+function PasswordModal({ currentPassword, onSave, onCancel }) {
+  const [val, setVal] = useState(currentPassword || "");
+  return (
+    <div className="modal-bg" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2>Senha de acesso</h2>
+        <p>
+          Digite a senha do app para liberar o chat com IA. A senha fica salva
+          neste navegador. Se não souber, peça pra quem configurou o app.
+        </p>
+        <input
+          type="password"
+          placeholder="senha"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          autoFocus
+          onKeyDown={e => { if (e.key === "Enter") onSave(val.trim()); }}
+        />
+        <div className="modal-buttons">
+          <button className="btn" onClick={onCancel}>Cancelar</button>
+          <button className="btn primary" onClick={() => onSave(val.trim())}>Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============== CHAT ==============
+const SYSTEM_PROMPT = `Você é um assistente que ajuda a gerenciar uma planilha de orçamento de itens de feitura de candomblé.
+
+A planilha tem DUAS partes:
+1. COTAÇÃO: itens com nome e quantidade, e 4 colunas de lojas onde se anotam preços (R$).
+2. GASTOS AVULSOS: lista simples de descrição + valor, para gastos que não estão na cotação (ex: mercado, transporte, taxa, contribuição rateada, oferenda, etc).
+
+Você recebe MENSAGENS do usuário em português (texto ou foto de lista manuscrita) e deve retornar um JSON com as ações que devem ser aplicadas.
+
+FORMATO DE RESPOSTA OBRIGATÓRIO (JSON puro, sem markdown, sem \`\`\`):
+{
+  "reply": "mensagem curta e amigável pro usuário",
+  "actions": [ ... lista de ações ... ]
+}
+
+AÇÕES NA COTAÇÃO:
+- {"type":"set_price","item":"nome do item","store":"nome da loja","price":15.50}
+- {"type":"add_item","name":"nome","qty":1,"price":15.50,"store":"nome da loja"}  // price/store opcionais
+- {"type":"remove_item","item":"nome do item"}
+- {"type":"rename_item","item":"nome atual","new_name":"novo nome"}
+- {"type":"set_qty","item":"nome do item","qty":5}
+- {"type":"rename_store","store":"nome atual da loja","new_name":"novo nome"}
+
+AÇÕES NOS GASTOS AVULSOS:
+- {"type":"add_expense","description":"Mercado","value":700.00}
+- {"type":"remove_expense","description":"Mercado"}
+- {"type":"set_expense_value","description":"Mercado","value":850.00}
+
+REGRAS:
+1. Para preços/valores, sempre use número decimal com ponto (15.50, não "R$ 15,50" nem "15,50").
+2. DECIDIR ENTRE COTAÇÃO E GASTO AVULSO:
+   - Se o usuário menciona uma loja → COTAÇÃO (set_price).
+   - Se a descrição parece um item da lista de feitura (vela, fava, miçanga, etc) → COTAÇÃO.
+   - Se for algo genérico que não tá na lista (mercado, uber, transporte, gasolina, taxa, contribuição, oferenda, almoço) → GASTO AVULSO.
+   - "Adiciona mercado 700" / "gastei 50 de uber" / "taxa de 100" → add_expense.
+   - "R$15 na vela branca, Loja Oxum" → set_price.
+3. Para fotos de listas: extraia tudo que aparece. Se for uma lista de compras de loja específica, use set_price. Se forem gastos avulsos misturados, use add_expense.
+4. Combine "item" com o nome mais próximo da lista atual quando fizer sentido.
+5. Se a mensagem não pede mudança, deixe "actions" vazio.
+6. Se uma loja mencionada não existe nas 4 lojas atuais, use rename_store pra renomear uma vazia ou avise no reply.
+7. Seja conciso e direto. Não explique demais.`;
+
+function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expenses, activeTab, applyActions }) {
+  const [messages, setMessages] = useState([
+    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nGastos avulsos:\n• \"Adiciona mercado 700 reais\"\n• \"Gastei 50 de uber\"\n• \"Taxa de 150\"\n\nOu envie a foto de uma lista." },
+  ]);
+  const [input, setInput] = useState("");
+  const [pendingImage, setPendingImage] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef();
+  const scrollRef = useRef();
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, loading]);
+
+  const handleImage = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setPendingImage({
+        dataUrl: ev.target.result,
+        mediaType: file.type || "image/jpeg",
+        base64: ev.target.result.split(",")[1],
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const buildContext = () => {
+    const itemsList = items.map(it => `- (qtd ${it.qty}) ${it.name}`).join("\n");
+    const expensesList = expenses.map(e =>
+      `- ${e.description}: ${e.value != null ? `R$ ${e.value.toFixed(2)}` : "—"}`
+    ).join("\n");
+    return `ABA ATIVA: ${activeTab === "cotacao" ? "Cotação" : "Gastos avulsos"}
+
+LISTA ATUAL DE ITENS (cotação):
+${itemsList || "(vazia)"}
+
+NOMES DAS LOJAS: ${stores.map((s,i)=>`${i+1}=${s}`).join(", ")}
+
+GASTOS AVULSOS ATUAIS:
+${expensesList || "(nenhum)"}`;
+  };
+
+  const send = async () => {
+    if (loading) return;
+    if (!input.trim() && !pendingImage) return;
+    if (!ensurePassword()) return;
+
+    const userMsg = { role: "user", text: input, image: pendingImage?.dataUrl };
+    setMessages(m => [...m, userMsg]);
+    const userInput = input;
+    const sentImage = pendingImage;
+    setInput("");
+    setPendingImage(null);
+    setLoading(true);
+
+    try {
+      const userContent = [];
+      if (sentImage) {
+        userContent.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: sentImage.mediaType,
+            data: sentImage.base64,
+          },
+        });
+      }
+      const text = (userInput.trim() ? userInput.trim() + "\n\n" : "") + buildContext();
+      userContent.push({ type: "text", text });
+
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-app-password": appPassword,
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: userContent }],
+        }),
+      });
+
+      if (resp.status === 401) {
+        // wrong password — clear it and prompt again
+        localStorage.removeItem(APP_PASSWORD_STORAGE);
+        throw new Error("Senha inválida. Clique em 🔒 Acessar IA pra digitar de novo.");
+      }
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`Erro ${resp.status}: ${err.slice(0, 200)}`);
+      }
+
+      const data = await resp.json();
+      const raw = (data.content || [])
+        .filter(c => c.type === "text")
+        .map(c => c.text)
+        .join("\n")
+        .trim();
+
+      // strip code fences if any
+      let jsonText = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      // try to find first { ... } block
+      const firstBrace = jsonText.indexOf("{");
+      const lastBrace = jsonText.lastIndexOf("}");
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        jsonText = jsonText.slice(firstBrace, lastBrace + 1);
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (e) {
+        setMessages(m => [...m, { role: "ai", text: raw || "(resposta sem formato esperado)" }]);
+        return;
+      }
+
+      const applied = applyActions(parsed.actions || []);
+      setMessages(m => [...m, {
+        role: "ai",
+        text: parsed.reply || "Pronto!",
+        actionsApplied: applied,
+      }]);
+    } catch (e) {
+      setMessages(m => [...m, { role: "ai", text: `Erro: ${e.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  };
+
+  return (
+    <div className="chat-panel">
+      <div className="chat-header">
+        <h3>✦ Assistente</h3>
+        <button onClick={onClose}>×</button>
+      </div>
+      <div className="chat-messages" ref={scrollRef}>
+        {messages.map((m, i) => (
+          <div key={i} className={`msg ${m.role}`}>
+            <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>
+            {m.image && <img src={m.image} alt="enviada" />}
+            {m.actionsApplied && m.actionsApplied.length > 0 && (
+              <div className="actions-applied">
+                {m.actionsApplied.map((a, j) => <div key={j}>{a}</div>)}
+              </div>
+            )}
+          </div>
+        ))}
+        {loading && (
+          <div className="msg ai">
+            <div className="typing"><span></span><span></span><span></span></div>
+          </div>
+        )}
+      </div>
+      {pendingImage && (
+        <div className="image-preview">
+          <img src={pendingImage.dataUrl} alt="preview" />
+          <span>Imagem pronta pra enviar</span>
+          <button
+            style={{marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'var(--red)'}}
+            onClick={() => setPendingImage(null)}
+          >×</button>
+        </div>
+      )}
+      <div className="chat-input-area">
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} style={{display:'none'}} />
+        <button
+          className="chat-btn-icon secondary"
+          onClick={() => fileRef.current?.click()}
+          title="Enviar foto da lista"
+          disabled={loading}
+        >📷</button>
+        <textarea
+          className="chat-input"
+          placeholder="Ex: R$15 na vela branca, Loja Oxum"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKey}
+          rows={1}
+          disabled={loading}
+        />
+        <button className="chat-btn-icon" onClick={send} disabled={loading} title="Enviar">↑</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
