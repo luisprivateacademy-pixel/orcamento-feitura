@@ -694,8 +694,8 @@ const INITIAL_BICHOS = [
   { qty: 1, name: "Pombo branco" },
 ];
 
-// v2: separa bichos da cotação, adiciona oferenda, abas pessoais e oferenda
-const STORAGE_KEY = "candomble_orcamento_v2";
+// v3: adiciona aba Doações que subtrai do total
+const STORAGE_KEY = "candomble_orcamento_v3";
 const APP_PASSWORD_STORAGE = "app_password";
 
 // ============== HELPERS ==============
@@ -714,6 +714,12 @@ const newExpense = (description="", value=null) => ({
 const newSimpleItem = (qty=1, name="", value=null) => ({
   id: crypto.randomUUID(),
   qty, name, value,
+});
+
+// Doação: nome do doador + item doado (texto livre) + valor (subtrai do total)
+const newDoacao = (name="", item="", value=null) => ({
+  id: crypto.randomUUID(),
+  name, item, value,
 });
 
 const formatBRL = (n) => {
@@ -784,6 +790,7 @@ const loadStateLocal = () => {
           expenses: parsed.expenses || [],
           bichos: Array.isArray(parsed.bichos) ? parsed.bichos : INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
           pessoais: Array.isArray(parsed.pessoais) ? parsed.pessoais : [],
+          doacoes: Array.isArray(parsed.doacoes) ? parsed.doacoes : [],
           oferendaValue: typeof parsed.oferendaValue === "number" ? parsed.oferendaValue : null,
         };
       }
@@ -795,6 +802,7 @@ const loadStateLocal = () => {
     expenses: [],
     bichos: INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
     pessoais: [],
+    doacoes: [],
     oferendaValue: null,
   };
 };
@@ -870,6 +878,7 @@ const fetchRemoteState = async () => {
     expenses: Array.isArray(d.expenses) ? d.expenses : [],
     bichos: Array.isArray(d.bichos) ? d.bichos : INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
     pessoais: Array.isArray(d.pessoais) ? d.pessoais : [],
+    doacoes: Array.isArray(d.doacoes) ? d.doacoes : [],
     oferendaValue: typeof d.oferendaValue === "number" ? d.oferendaValue : null,
     updated_at: data.updated_at,
   };
@@ -884,8 +893,9 @@ const saveRemoteState = async (state) => {
     expenses: state.expenses,
     bichos: state.bichos,
     pessoais: state.pessoais,
+    doacoes: state.doacoes,
     oferendaValue: state.oferendaValue,
-    _client_id: CLIENT_ID, // marcador pra ignorar na escuta Realtime
+    _client_id: CLIENT_ID,
   };
   const { error } = await sb
     .from(TABLE)
@@ -906,6 +916,7 @@ const createBackup = async (state, label = null) => {
     expenses: state.expenses,
     bichos: state.bichos,
     pessoais: state.pessoais,
+    doacoes: state.doacoes,
     oferendaValue: state.oferendaValue,
   };
   const { data, error } = await sb
@@ -977,13 +988,14 @@ const formatBackupDate = (iso) => {
 // ============== EXPORT / IMPORT JSON ==============
 const downloadJSON = (state) => {
   const payload = {
-    version: 2,
+    version: 3,
     exported_at: new Date().toISOString(),
     items: state.items,
     stores: state.stores,
     expenses: state.expenses,
     bichos: state.bichos,
     pessoais: state.pessoais,
+    doacoes: state.doacoes,
     oferendaValue: state.oferendaValue,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -1010,9 +1022,9 @@ const parseImportedJSON = (text) => {
       ? src.stores
       : ["Loja 1", "Loja 2", "Loja 3", "Loja 4"],
     expenses: Array.isArray(src.expenses) ? src.expenses : [],
-    // v2: bichos/pessoais/oferenda — se vier de v1 (sem esses campos), usa defaults
     bichos: Array.isArray(src.bichos) ? src.bichos : INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)),
     pessoais: Array.isArray(src.pessoais) ? src.pessoais : [],
+    doacoes: Array.isArray(src.doacoes) ? src.doacoes : [],
     oferendaValue: typeof src.oferendaValue === "number" ? src.oferendaValue : null,
   };
 };
@@ -1103,8 +1115,9 @@ function App() {
   const [expenses, setExpenses] = useState(initial.expenses || []);
   const [bichos, setBichos] = useState(initial.bichos || []);
   const [pessoais, setPessoais] = useState(initial.pessoais || []);
+  const [doacoes, setDoacoes] = useState(initial.doacoes || []);
   const [oferendaValue, setOferendaValue] = useState(initial.oferendaValue ?? null);
-  const [activeTab, setActiveTab] = useState("cotacao"); // "cotacao" | "bichos" | "oferenda" | "pessoais" | "gastos"
+  const [activeTab, setActiveTab] = useState("cotacao"); // "cotacao" | "bichos" | "oferenda" | "pessoais" | "doacoes" | "gastos"
   const [chatOpen, setChatOpen] = useState(false);
   const [appPassword, setAppPassword] = useState(() => localStorage.getItem(APP_PASSWORD_STORAGE) || "");
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -1137,6 +1150,7 @@ function App() {
         if (remote && (remote.items.length > 0 || remote.expenses.length > 0
             || (remote.bichos && remote.bichos.length > 0)
             || (remote.pessoais && remote.pessoais.length > 0)
+            || (remote.doacoes && remote.doacoes.length > 0)
             || remote.oferendaValue != null
             || JSON.stringify(remote.stores) !== JSON.stringify(["Loja 1","Loja 2","Loja 3","Loja 4"]))) {
           // Banco tem dados → usa eles
@@ -1146,6 +1160,7 @@ function App() {
           setExpenses(remote.expenses);
           if (Array.isArray(remote.bichos)) setBichos(remote.bichos);
           if (Array.isArray(remote.pessoais)) setPessoais(remote.pessoais);
+          if (Array.isArray(remote.doacoes)) setDoacoes(remote.doacoes);
           setOferendaValue(remote.oferendaValue ?? null);
           setTimeout(() => { isApplyingRemoteRef.current = false; }, 50);
         } else {
@@ -1154,7 +1169,8 @@ function App() {
           const local = loadStateLocal();
           const hasLocalData = local.items.length > 0 || local.expenses.length > 0
                              || (local.bichos && local.bichos.length > 0)
-                             || (local.pessoais && local.pessoais.length > 0);
+                             || (local.pessoais && local.pessoais.length > 0)
+                             || (local.doacoes && local.doacoes.length > 0);
           if (!hasLocalData) {
             // Aplica lista inicial padrão (com IDs novos)
             const defaultItems = INITIAL_ITEMS.map(it => newRow(it.qty, it.name));
@@ -1184,8 +1200,8 @@ function App() {
     // Espera 5s depois do load pra não congestionar a inicialização
     const timer = setTimeout(() => {
       // Só faz backup se tiver dados de verdade
-      if (items.length === 0 && expenses.length === 0 && bichos.length === 0 && pessoais.length === 0) return;
-      ensureDailyBackup({ items, stores, expenses, bichos, pessoais, oferendaValue }).catch(() => {});
+      if (items.length === 0 && expenses.length === 0 && bichos.length === 0 && pessoais.length === 0 && doacoes.length === 0) return;
+      ensureDailyBackup({ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue }).catch(() => {});
     }, 5000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1216,6 +1232,7 @@ function App() {
               if (Array.isArray(newData.expenses)) setExpenses(newData.expenses);
               if (Array.isArray(newData.bichos)) setBichos(newData.bichos);
               if (Array.isArray(newData.pessoais)) setPessoais(newData.pessoais);
+              if (Array.isArray(newData.doacoes)) setDoacoes(newData.doacoes);
               if (newData.oferendaValue !== undefined) setOferendaValue(newData.oferendaValue);
               setTimeout(() => { isApplyingRemoteRef.current = false; }, 50);
               // Pequeno flash visual de "sincronizado"
@@ -1238,7 +1255,7 @@ function App() {
   // ====== AUTOSAVE COM DEBOUNCE ======
   useEffect(() => {
     // Sempre salva no localStorage (cache instantâneo)
-    saveStateLocal({ items, stores, expenses, bichos, pessoais, oferendaValue });
+    saveStateLocal({ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue });
 
     // Não salva no banco se ainda não fez o primeiro carregamento
     if (!initialLoadDoneRef.current) return;
@@ -1249,7 +1266,7 @@ function App() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        await saveRemoteState({ items, stores, expenses, bichos, pessoais, oferendaValue });
+        await saveRemoteState({ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue });
         setSyncStatus("synced");
       } catch (e) {
         console.error("Erro ao salvar:", e);
@@ -1260,7 +1277,7 @@ function App() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [items, stores, expenses, bichos, pessoais, oferendaValue]);
+  }, [items, stores, expenses, bichos, pessoais, doacoes, oferendaValue]);
 
   // --- summary calc ---
   const summary = useMemo(() => {
@@ -1303,9 +1320,15 @@ function App() {
     return pessoais.reduce((sum, p) => sum + ((p.value || 0) * (p.qty || 1)), 0);
   }, [pessoais]);
 
+  // Total das doações recebidas (subtrai do total geral)
+  const doacoesTotal = useMemo(() => {
+    return doacoes.reduce((sum, d) => sum + (d.value || 0), 0);
+  }, [doacoes]);
+
   const oferendaTotal = oferendaValue || 0;
 
-  const grandTotal = summary.totalLowest + expensesTotal + bichosTotal + pessoaisTotal + oferendaTotal;
+  // Total Geral = soma dos gastos − doações recebidas
+  const grandTotal = summary.totalLowest + expensesTotal + bichosTotal + pessoaisTotal + oferendaTotal - doacoesTotal;
 
   // --- expenses ops ---
   const updateExpense = (id, patch) => {
@@ -1394,6 +1417,24 @@ function App() {
   };
   const addPessoal = () => setPessoais(prev => [...prev, newSimpleItem(1, "", null)]);
 
+  // ===== DOAÇÕES ops =====
+  const updateDoacao = (id, patch) => {
+    setDoacoes(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
+  };
+  const updateDoacaoValue = (id, parsed) => {
+    setDoacoes(prev => prev.map(d => d.id === id ? { ...d, value: parsed } : d));
+  };
+  const deleteDoacao = (id) => {
+    const d = doacoes.find(x => x.id === id);
+    if (!d) return;
+    setSimpleConfirm({
+      title: "Excluir doação?",
+      message: `Tem certeza que quer excluir a doação de "${d.name || "(sem nome)"}"? Essa ação não pode ser desfeita.`,
+      onConfirm: () => setDoacoes(prev => prev.filter(x => x.id !== id)),
+    });
+  };
+  const addDoacao = () => setDoacoes(prev => [...prev, newDoacao("", "", null)]);
+
   // ===== OFERENDA ops =====
   const updateOferendaValue = (parsed) => {
     setOferendaValue(parsed);
@@ -1401,12 +1442,13 @@ function App() {
   const resetAll = () => {
     setDestructiveAction({
       title: "Resetar tudo",
-      message: "Vai apagar TUDO (cotação, bichos, pessoais, oferenda, gastos) e voltar à lista original. Digite a senha do app pra confirmar.",
+      message: "Vai apagar TUDO (cotação, bichos, pessoais, oferenda, doações, gastos) e voltar à lista original. Digite a senha do app pra confirmar.",
       onConfirm: () => {
         setItems(INITIAL_ITEMS.map(it => newRow(it.qty, it.name)));
         setStores(["Loja 1", "Loja 2", "Loja 3", "Loja 4"]);
         setBichos(INITIAL_BICHOS.map(b => newSimpleItem(b.qty, b.name)));
         setPessoais([]);
+        setDoacoes([]);
         setOferendaValue(null);
         setExpenses([]);
       },
@@ -1424,7 +1466,7 @@ function App() {
 
   // --- backup / restore / export / import ---
   const handleExport = () => {
-    downloadJSON({ items, stores, expenses, bichos, pessoais, oferendaValue });
+    downloadJSON({ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue });
   };
 
   const handleImportClick = () => {
@@ -1441,15 +1483,16 @@ function App() {
         const parsed = parseImportedJSON(ev.target.result);
         setDestructiveAction({
           title: "Importar arquivo",
-          message: `Vai SUBSTITUIR os dados atuais pelo conteúdo do arquivo (${parsed.items.length} itens, ${parsed.bichos.length} bichos, ${parsed.pessoais.length} pessoais, ${parsed.expenses.length} gastos). Digite a senha pra confirmar.`,
+          message: `Vai SUBSTITUIR os dados atuais pelo conteúdo do arquivo (${parsed.items.length} itens, ${parsed.bichos.length} bichos, ${parsed.pessoais.length} pessoais, ${parsed.doacoes.length} doações, ${parsed.expenses.length} gastos). Digite a senha pra confirmar.`,
           onConfirm: () => {
             // Cria backup antes de substituir
-            createBackup({ items, stores, expenses, bichos, pessoais, oferendaValue }, "Antes de importar arquivo").catch(() => {});
+            createBackup({ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue }, "Antes de importar arquivo").catch(() => {});
             setItems(parsed.items);
             setStores(parsed.stores);
             setExpenses(parsed.expenses);
             setBichos(parsed.bichos);
             setPessoais(parsed.pessoais);
+            setDoacoes(parsed.doacoes);
             setOferendaValue(parsed.oferendaValue);
           },
         });
@@ -1466,14 +1509,15 @@ function App() {
       message: `Vai SUBSTITUIR os dados atuais pelo backup de ${formatBackupDate(backup.created_at)}. Digite a senha pra confirmar.`,
       onConfirm: () => {
         // Antes de restaurar, salva o estado atual como backup
-        createBackup({ items, stores, expenses, bichos, pessoais, oferendaValue }, "Antes de restaurar").catch(() => {});
+        createBackup({ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue }, "Antes de restaurar").catch(() => {});
         const d = backup.data || {};
         if (Array.isArray(d.items)) setItems(d.items);
         if (Array.isArray(d.stores) && d.stores.length === 4) setStores(d.stores);
         if (Array.isArray(d.expenses)) setExpenses(d.expenses);
-        // v2: bichos/pessoais/oferenda — se backup é v1, mantém o que tá agora pra não zerar
+        // v2/v3: bichos/pessoais/doacoes/oferenda — se backup é antigo, mantém o que tá agora pra não zerar
         if (Array.isArray(d.bichos)) setBichos(d.bichos);
         if (Array.isArray(d.pessoais)) setPessoais(d.pessoais);
+        if (Array.isArray(d.doacoes)) setDoacoes(d.doacoes);
         if (d.oferendaValue !== undefined) setOferendaValue(d.oferendaValue);
         setBackupsOpen(false);
       },
@@ -1489,6 +1533,7 @@ function App() {
     let curExpenses = expenses.map(e => ({...e}));
     let curBichos = bichos.map(b => ({...b}));
     let curPessoais = pessoais.map(p => ({...p}));
+    let curDoacoes = doacoes.map(d => ({...d}));
     let curOferenda = oferendaValue;
 
     for (const a of actions) {
@@ -1685,6 +1730,43 @@ function App() {
             applied.push(`✗ Valor inválido para oferenda`);
           }
         }
+        // ===== DOAÇÕES =====
+        else if (a.type === "add_doacao") {
+          const value = a.value != null ? parsePrice(a.value) : null;
+          curDoacoes = [...curDoacoes, {
+            id: crypto.randomUUID(),
+            name: a.name || "",
+            item: a.item || "",
+            value,
+          }];
+          applied.push(`+ Doação de ${a.name || "?"}` + (a.item ? ` (${a.item})` : "") + (value != null ? `: ${formatBRL(value)}` : ""));
+        }
+        else if (a.type === "remove_doacao") {
+          const q = norm(a.name || a.item || "");
+          const idx = curDoacoes.findIndex(d =>
+            norm(d.name).includes(q) || norm(d.item).includes(q)
+          );
+          if (idx >= 0) {
+            const removed = curDoacoes[idx];
+            curDoacoes = curDoacoes.filter((_, i) => i !== idx);
+            applied.push(`− Doação removida: ${removed.name}`);
+          } else {
+            applied.push(`✗ Doação não encontrada: "${a.name || a.item}"`);
+          }
+        }
+        else if (a.type === "set_doacao_value") {
+          const value = parsePrice(a.value);
+          const q = norm(a.name || a.item || "");
+          const idx = curDoacoes.findIndex(d =>
+            norm(d.name).includes(q) || norm(d.item).includes(q)
+          );
+          if (idx >= 0 && value != null) {
+            curDoacoes[idx] = { ...curDoacoes[idx], value };
+            applied.push(`✎ Doação "${curDoacoes[idx].name}": ${formatBRL(value)}`);
+          } else {
+            applied.push(`✗ Doação não encontrada ou valor inválido: "${a.name || a.item}"`);
+          }
+        }
       } catch (e) {
         applied.push(`✗ Erro: ${e.message}`);
       }
@@ -1695,6 +1777,7 @@ function App() {
     setExpenses(curExpenses);
     setBichos(curBichos);
     setPessoais(curPessoais);
+    setDoacoes(curDoacoes);
     setOferendaValue(curOferenda);
     return applied;
   };
@@ -1728,6 +1811,7 @@ function App() {
           <div className="label">Total Geral</div>
           <div className="breakdown">
             Cotação {formatBRL(summary.totalLowest)} · Bichos {formatBRL(bichosTotal)} · Oferenda {formatBRL(oferendaTotal)} · Pessoais {formatBRL(pessoaisTotal)} · Gastos {formatBRL(expensesTotal)}
+            {doacoesTotal > 0 && <span style={{color: 'var(--green, #4a7c4e)'}}> − Doações {formatBRL(doacoesTotal)}</span>}
           </div>
         </div>
         <div className="value">{formatBRL(grandTotal)}</div>
@@ -1758,6 +1842,12 @@ function App() {
           onClick={() => setActiveTab("pessoais")}
         >
           Pessoais <span className="count">{pessoais.length}</span>
+        </button>
+        <button
+          className={`tab ${activeTab === "doacoes" ? "active" : ""}`}
+          onClick={() => setActiveTab("doacoes")}
+        >
+          Doações <span className="count">{doacoes.length}</span>
         </button>
         <button
           className={`tab ${activeTab === "gastos" ? "active" : ""}`}
@@ -2073,6 +2163,80 @@ function App() {
         </>
       )}
 
+      {activeTab === "doacoes" && (
+        <>
+          <div className="summary" style={{gridTemplateColumns:'1fr 1fr'}}>
+            <div className="stat">
+              <div className="label">Total recebido em doações</div>
+              <div className="value gold">{formatBRL(doacoesTotal)}</div>
+            </div>
+            <div className="stat">
+              <div className="label">Quantidade de doações</div>
+              <div className="value">{doacoes.length}</div>
+            </div>
+          </div>
+
+          <div className="toolbar">
+            <button className="btn primary" onClick={addDoacao}>＋ Nova doação</button>
+          </div>
+
+          <div className="table-wrap simple-wrap">
+            <div className="table-scroll">
+              <table className="expenses-table">
+                <thead>
+                  <tr>
+                    <th className="col-desc">Nome</th>
+                    <th className="col-desc">Item doado</th>
+                    <th className="col-value" style={{textAlign:'right'}}>Valor</th>
+                    <th className="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {doacoes.map(d => (
+                    <tr key={d.id}>
+                      <td className="col-desc">
+                        <input
+                          className="cell-input"
+                          value={d.name}
+                          onChange={ev => updateDoacao(d.id, { name: ev.target.value })}
+                          placeholder="Nome do doador"
+                        />
+                      </td>
+                      <td className="col-desc">
+                        <input
+                          className="cell-input"
+                          value={d.item}
+                          onChange={ev => updateDoacao(d.id, { item: ev.target.value })}
+                          placeholder="Ex: Dinheiro, frangos, velas..."
+                        />
+                      </td>
+                      <td className="col-value">
+                        <PriceInput
+                          value={d.value}
+                          onCommit={(n) => updateDoacaoValue(d.id, n)}
+                        />
+                      </td>
+                      <td className="col-actions">
+                        <button className="row-action-btn" onClick={() => deleteDoacao(d.id)} title="Remover">×</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {doacoes.length === 0 && (
+                    <tr><td colSpan="4" style={{textAlign:'center', padding:'24px', color:'var(--ink-soft)', fontStyle:'italic'}}>
+                      Nenhuma doação registrada. Clique em "Nova doação" pra adicionar.
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p style={{fontSize: 12, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5}}>
+            O total das doações é subtraído do Total Geral.
+          </p>
+        </>
+      )}
+
       {activeTab === "gastos" && (
         <>
           {/* EXPENSES SUMMARY (just one stat) */}
@@ -2160,6 +2324,7 @@ function App() {
           expenses={expenses}
           bichos={bichos}
           pessoais={pessoais}
+          doacoes={doacoes}
           oferendaValue={oferendaValue}
           activeTab={activeTab}
           applyActions={applyActions}
@@ -2210,7 +2375,7 @@ function App() {
 
       {backupsOpen && (
         <BackupsModal
-          currentState={{ items, stores, expenses, bichos, pessoais, oferendaValue }}
+          currentState={{ items, stores, expenses, bichos, pessoais, doacoes, oferendaValue }}
           onRestore={restoreBackup}
           onClose={() => setBackupsOpen(false)}
         />
@@ -2469,12 +2634,13 @@ function BackupsModal({ currentState, onRestore, onClose }) {
 // ============== CHAT ==============
 const SYSTEM_PROMPT = `Você é um assistente que ajuda a gerenciar uma planilha de orçamento de itens de feitura de candomblé.
 
-A planilha tem CINCO partes (abas):
+A planilha tem SEIS partes (abas):
 1. COTAÇÃO: itens com nome e quantidade, e 4 colunas de lojas onde se anotam preços (R$). Ex: ibás, miçangas, velas, ferramentas.
 2. BICHOS: lista de animais para a feitura (cabrito, frangos, etc). Cada bicho tem qtd + valor unitário (sem comparação de lojas).
 3. OFERENDA EXUS: campo único com valor da oferenda combinada com o pai de santo.
 4. PESSOAIS: compras pessoais (roupas brancas, sandália, toalha, adereços, etc). Cada item tem qtd + valor unitário.
-5. GASTOS AVULSOS: lista simples de descrição + valor, para gastos imprevistos (uber, mercado, taxa, etc).
+5. DOAÇÕES: pessoas que doaram dinheiro ou itens pra ajudar com a feitura. Cada doação tem nome do doador, item doado (texto livre) e valor. O total das doações é SUBTRAÍDO do total geral.
+6. GASTOS AVULSOS: lista simples de descrição + valor, para gastos imprevistos (uber, mercado, taxa, etc).
 
 Você recebe MENSAGENS do usuário em português (texto ou foto de lista manuscrita) e deve retornar um JSON com as ações que devem ser aplicadas.
 
@@ -2507,6 +2673,11 @@ AÇÕES EM PESSOAIS:
 AÇÃO NA OFERENDA EXUS:
 - {"type":"set_oferenda_value","value":500.00}
 
+AÇÕES EM DOAÇÕES:
+- {"type":"add_doacao","name":"Bruno","item":"dinheiro","value":200.00}  // item pode ser "dinheiro" ou descrição do que doou (ex: "7 frangos"); value pode ser omitido
+- {"type":"remove_doacao","name":"Bruno"}  // busca pelo nome do doador OU pelo item doado
+- {"type":"set_doacao_value","name":"Bruno","value":250.00}
+
 AÇÕES NOS GASTOS AVULSOS:
 - {"type":"add_expense","description":"Mercado","value":700.00}
 - {"type":"remove_expense","description":"Mercado"}
@@ -2519,6 +2690,7 @@ REGRAS:
    - Se é animal/bicho da feitura (cabrito, frango, franga, d'angola, pombo) → BICHO. Ex: "30 reais no frango" → set_bicho_value.
    - Se é compra pessoal (roupa branca, sandália, toalha, conta de fio, brinco, adereço) → PESSOAIS. Ex: "comprei sandália por 80" → add_pessoal.
    - Se menciona "oferenda exus" ou "oferenda dos exus" com um valor → OFERENDA. Ex: "oferenda dos exus 500" → set_oferenda_value.
+   - Se menciona DOAÇÃO ou alguém DEU/DOOU/CONTRIBUIU dinheiro ou item → DOAÇÃO. Ex: "Bruno me deu 200" → add_doacao; "Maria doou 7 frangos" → add_doacao com item="7 frangos".
    - Se é gasto solto não relacionado à lista (uber, gasolina, mercado, taxa, contribuição) → GASTO AVULSO.
    - Se item já está na cotação por nome (vela, fava, miçanga, ibá, ferramenta, etc) → COTAÇÃO.
 3. Para fotos de listas: extraia tudo que aparece e classifique cada linha pela aba correta.
@@ -2527,9 +2699,9 @@ REGRAS:
 6. Se uma loja mencionada não existe nas 4 lojas atuais, use rename_store pra renomear uma vazia ou avise no reply.
 7. Seja conciso e direto. Não explique demais. Use a aba ativa como dica de contexto, mas não dependa só dela: o usuário pode estar em qualquer aba e pedir coisa de outra.`;
 
-function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expenses, bichos, pessoais, oferendaValue, activeTab, applyActions }) {
+function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expenses, bichos, pessoais, doacoes, oferendaValue, activeTab, applyActions }) {
   const [messages, setMessages] = useState([
-    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nBichos:\n• \"Frango 35 cada\"\n• \"Cabrito 280\"\n\nOferenda exus:\n• \"Oferenda dos exus 500\"\n\nPessoais:\n• \"Comprei sandália branca por 80\"\n• \"Adiciona toalha branca 45\"\n\nGastos avulsos:\n• \"Gastei 50 de uber\"\n• \"Mercado 700\"\n\n📷 Envie foto de uma lista\n🎤 Ou aperte o microfone e fale" },
+    { role: "ai", text: "Olá! Posso preencher a planilha pra você.\n\nCotação:\n• \"R$15 na vela branca, Loja Oxum\"\n• \"Adiciona 3 atabaques por 200 na Loja 1\"\n\nBichos:\n• \"Frango 35 cada\"\n• \"Cabrito 280\"\n\nOferenda exus:\n• \"Oferenda dos exus 500\"\n\nPessoais:\n• \"Comprei sandália branca por 80\"\n• \"Adiciona toalha branca 45\"\n\nDoações:\n• \"Bruno me deu 200\"\n• \"Maria doou 7 frangos, 245\"\n\nGastos avulsos:\n• \"Gastei 50 de uber\"\n• \"Mercado 700\"\n\n📷 Envie foto de uma lista\n🎤 Ou aperte o microfone e fale" },
   ]);
   const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState(null);
@@ -2701,11 +2873,15 @@ function ChatPanel({ onClose, appPassword, ensurePassword, items, stores, expens
     const pessoaisList = pessoais.map(p =>
       `- (qtd ${p.qty}) ${p.name}: ${p.value != null ? `R$ ${p.value.toFixed(2)}` : "—"}`
     ).join("\n");
+    const doacoesList = doacoes.map(d =>
+      `- ${d.name}${d.item ? ` (${d.item})` : ""}: ${d.value != null ? `R$ ${d.value.toFixed(2)}` : "—"}`
+    ).join("\n");
     const tabLabel = ({
       cotacao: "Cotação",
       bichos: "Bichos",
       oferenda: "Oferenda Exus",
       pessoais: "Pessoais",
+      doacoes: "Doações",
       gastos: "Gastos avulsos",
     })[activeTab] || activeTab;
     return `ABA ATIVA: ${tabLabel}
@@ -2722,6 +2898,9 @@ OFERENDA PARA OS EXUS: ${oferendaValue != null ? `R$ ${oferendaValue.toFixed(2)}
 
 COMPRAS PESSOAIS:
 ${pessoaisList || "(nenhuma)"}
+
+DOAÇÕES RECEBIDAS:
+${doacoesList || "(nenhuma)"}
 
 GASTOS AVULSOS:
 ${expensesList || "(nenhum)"}`;
